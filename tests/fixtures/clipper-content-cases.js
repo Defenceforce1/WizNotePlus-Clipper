@@ -43,5 +43,16 @@
   r = capture('<div id="mw-content-text"><div class="mw-parser-output"><table class="ambox"><tr><td class="mbox-image"><img src="https://example.invalid/decorative.svg"></td><td>notice-text-marker</td></tr></table><p>body-marker</p><div class="navbox-styles"><div class="navbox">nested-menu-marker</div></div></div></div>');
   check('navigation style wrappers do not leave empty blocks', !r.pageHTML.includes('navbox-styles') && !r.pageHTML.includes('nested-menu-marker'));
   check('maintenance text retained without failed decorative icon', r.pageHTML.includes('notice-text-marker') && !r.pageHTML.includes('decorative.svg') && r.resources.length === 0);
+  document.body.style.backgroundColor = 'rgb(40, 60, 80)';
+  capture('<main><p id="selected"><span style="background-color:rgb(120,170,240);color:rgb(255,255,255)">selected-no-tint-marker</span><code style="background-color:rgb(240,240,240)">code-marker</code></p><p>unselected-marker</p></main>');
+  range = document.createRange(); range.selectNodeContents(document.getElementById('selected')); window.getSelection().addRange(range);
+  ExtensionPreprocessingJS.run({completionFunction: function (x) { r = x; }});
+  doc = new DOMParser().parseFromString(r.selectionHTML, 'text/html');
+  check('selection does not import page canvas background', !r.selectionHTML.includes('40, 60, 80'));
+  check('selection tint is removed from ordinary text', !r.selectionHTML.includes('120, 170, 240'));
+  check('white selected text remains readable after clearing tint', doc.querySelector('span').style.color === 'inherit');
+  check('intentional code background remains intact', doc.querySelector('code').style.backgroundColor === 'rgb(240, 240, 240)');
+  check('selection still contains only selected content', r.selectionHTML.includes('selected-no-tint-marker') && !r.selectionHTML.includes('unselected-marker'));
+  document.body.style.backgroundColor = '';
   return checks;
 }());

@@ -17,3 +17,4 @@ outputs/
 *.xcuserstate
 xcuserdata/
 /Resources/AppIcon.icns
+/Resources/AppIcon.icon/

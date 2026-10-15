@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
+enum ClipperLinks {
+    static let webVersionURL = URL(string: "https://www.wiz.cn/xapp")!
+}
+
 struct ClipInput {
     let title: String
     let url: String

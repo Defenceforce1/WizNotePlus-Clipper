@@ -69,7 +69,9 @@ var ExtensionPreprocessingJS = {
         // References, notes, infoboxes, tables, figures and section anchors are
         // article content; do not blanket-delete aside/header/footer or lists.
       }
-      var backdrop = document.body;
+      // A detached selection is not a page canvas. Importing the body colour
+      // here paints the selected fragment as a large highlighted rectangle.
+      var backdrop = articleMode === 'selection' ? null : document.body;
       while (backdrop) {
         var color = window.getComputedStyle(backdrop).backgroundColor;
         if (color && color !== 'transparent' && !/rgba\([^)]*,\s*0\s*\)$/.test(color)) { copy.style.backgroundColor = color; break; }
@@ -160,6 +162,16 @@ var ExtensionPreprocessingJS = {
         });
       }
       clean(copy);
+      if (articleMode === 'selection') {
+        [copy].concat(Array.from(copy.querySelectorAll('*'))).forEach(function (item) {
+          if (mathTags.has(item.localName) || item.closest('pre,code,table,mark')) return;
+          item.style.removeProperty('background-color');
+          // Dark-page white text must not become invisible on the note canvas.
+          var color = item.style.color.match(/^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+          if (color && Math.min(+color[1], +color[2], +color[3]) > 200) item.style.color = 'inherit';
+        });
+        copy.style.color = '#202124';
+      }
       var wrapper = document.createElement('div'); wrapper.setAttribute('style', copy.getAttribute('style') || '');
       wrapper.innerHTML = copy.innerHTML; return wrapper.outerHTML;
     }
@@ -182,7 +194,7 @@ var ExtensionPreprocessingJS = {
         }
         page += source.outerHTML;
       }
-      var chosen = selected.childNodes.length ? snapshot(selected) : '';
+      var chosen = selected.childNodes.length ? snapshot(selected, 'selection') : '';
       if (new Blob([page]).size > 8 * 1024 * 1024) page = '';
       if (new Blob([chosen]).size > 8 * 1024 * 1024) chosen = '';
       args.completionFunction({title: document.title, url: location.href, pageHTML: page, selectionHTML: chosen, resources: resources,

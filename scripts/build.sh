@@ -22,7 +22,13 @@ cp "$resource_dir/ClipPage.js" "$app/Contents/Resources/ClipPage.js"
 cp "$project_dir/licenses/WizNotePlus-NOTICE.txt" "$app/Contents/Resources/LICENSE.txt"
 cp "$project_dir/LICENSE" "$app/Contents/Resources/GPL-3.0.txt"
 cp "$project_dir/README.md" "$app/Contents/Resources/README.md"
-if [[ -f "$resource_dir/AppIcon.icns" ]]; then
+if [[ -d "$resource_dir/AppIcon.icon" ]]; then
+    bash "$project_dir/scripts/compile-icon.sh" "$resource_dir/AppIcon.icon" "$output/CompiledIcon"
+    cp "$output/CompiledIcon/Assets.car" "$app/Contents/Resources/Assets.car"
+    cp "$output/CompiledIcon/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
+    /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string AppIcon' "$app/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c 'Add :CFBundleIconName string AppIcon' "$app/Contents/Info.plist"
+elif [[ -f "$resource_dir/AppIcon.icns" ]]; then
     xcrun swift "$project_dir/scripts/prepare-icon.swift" "$resource_dir/AppIcon.icns" "$output/AppIcon.iconset"
     iconutil -c icns "$output/AppIcon.iconset" -o "$app/Contents/Resources/AppIcon.icns"
     /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string AppIcon' "$app/Contents/Info.plist"
@@ -42,5 +48,6 @@ lipo "$app/Contents/MacOS/WizNotePlusClipper" -verify_arch arm64
 lipo "$extension/Contents/MacOS/WizNotePlusShare" -verify_arch arm64
 "$app/Contents/MacOS/WizNotePlusClipper" --input-self-test
 "$app/Contents/MacOS/WizNotePlusClipper" --cloud-self-test
+"$app/Contents/MacOS/WizNotePlusClipper" --session-self-test
 "$app/Contents/MacOS/WizNotePlusClipper" --submission-self-test
 printf '%s\n' 'Native clipping candidate built. Safari load and multi-Mac signing still require verification.'

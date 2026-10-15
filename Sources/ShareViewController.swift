@@ -12,6 +12,26 @@ private final class ClipperFormView: NSView {
     }
 }
 
+final class ClipLoginForm: NSView, NSTextFieldDelegate {
+    let user = NSTextField(frame: NSRect(x: 0, y: 70, width: 310, height: 26))
+    let password = NSSecureTextField(frame: NSRect(x: 0, y: 36, width: 310, height: 26))
+    let remember = NSButton(checkboxWithTitle: "记住密码（仅存于本机钥匙串）", target: nil, action: nil)
+    private let loadedUser: String?
+    init(userID: String, secret: ClipLoginSecret?) {
+        loadedUser = secret?.userID
+        super.init(frame: NSRect(x: 0, y: 0, width: 310, height: 102))
+        user.placeholderString = "为知账号"; user.stringValue = userID; user.delegate = self
+        password.placeholderString = "密码"
+        if secret?.userID == userID { password.stringValue = secret?.password ?? "" }
+        remember.frame = NSRect(x: 0, y: 0, width: 310, height: 24); remember.state = .on
+        addSubview(user); addSubview(password); addSubview(remember)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    func controlTextDidChange(_ obj: Notification) {
+        if user.stringValue != loadedUser { password.stringValue = "" }
+    }
+}
+
 @objc(WizNotePlusShareViewController)
 final class ShareViewController: NSViewController {
     private let status = NSTextField(wrappingLabelWithString: "正在读取 Safari 分享内容…")
@@ -22,8 +42,11 @@ final class ShareViewController: NSViewController {
     private let login = NSButton(title: "登录账号", target: nil, action: nil)
     private let save = NSButton(title: "上传", target: nil, action: nil)
     private let cancel = NSButton(title: "取消", target: nil, action: nil)
+    private let web = NSButton(title: "为知笔记网页版", target: nil, action: nil)
     private let activity = NSProgressIndicator()
     private var cloud = CloudClipClient()
+    private var credentials = ClipLoginStorage.keychain
+    private lazy var session = CloudClipSession(client: cloud, storage: credentials)
     private lazy var submission = CloudClipSubmission(client: cloud)
     private var cloudAccount: CloudClipAccount?
     private var input: ClipInput?
@@ -31,12 +54,13 @@ final class ShareViewController: NSViewController {
     private var completed = false
     private var requestFinished = false
     private var onAcceptedShare: (() -> Void)?
+    private var persistenceWarning: String?
 
     // Injected transport/completion also lets isolated UI tests exercise the
     // actual button action without credentials or a live extension request.
-    convenience init(cloud: CloudClipClient, onAcceptedShare: @escaping () -> Void) {
+    convenience init(cloud: CloudClipClient, credentials: ClipLoginStorage = .keychain, onAcceptedShare: @escaping () -> Void) {
         self.init(nibName: nil, bundle: nil)
-        self.cloud = cloud; self.onAcceptedShare = onAcceptedShare
+        self.cloud = cloud; self.credentials = credentials; self.onAcceptedShare = onAcceptedShare
     }
 
     override func loadView() {
@@ -45,7 +69,7 @@ final class ShareViewController: NSViewController {
         let heading = NSTextField(labelWithString: "网页剪藏")
         heading.font = .boldSystemFont(ofSize: 17)
         heading.frame = NSRect(x: 24, y: 298, width: 412, height: 24); view.addSubview(heading)
-        let subtitle = NSTextField(labelWithString: "上传到为知云端，无需打开主 App")
+        let subtitle = NSTextField(labelWithString: "保存网页到为知笔记")
         subtitle.font = .systemFont(ofSize: 11); subtitle.textColor = .secondaryLabelColor
         subtitle.frame = NSRect(x: 24, y: 275, width: 412, height: 18); view.addSubview(subtitle)
         let card = NSBox(frame: NSRect(x: 20, y: 103, width: 420, height: 158))
@@ -66,7 +90,9 @@ final class ShareViewController: NSViewController {
         status.font = .systemFont(ofSize: 11); status.textColor = .secondaryLabelColor
         status.frame = NSRect(x: 24, y: 42, width: 412, height: 49); view.addSubview(status)
         activity.style = .spinning; activity.isDisplayedWhenStopped = false
-        activity.frame = NSRect(x: 28, y: 17, width: 16, height: 16); view.addSubview(activity)
+        activity.frame = NSRect(x: 188, y: 17, width: 16, height: 16); view.addSubview(activity)
+        web.frame = NSRect(x: 24, y: 10, width: 145, height: 30); web.bezelStyle = .rounded
+        web.target = self; web.action = #selector(openWebVersion(_:)); view.addSubview(web)
         save.frame = NSRect(x: 345, y: 10, width: 91, height: 30); save.bezelStyle = .rounded
         save.keyEquivalent = "\r"; save.target = self; save.action = #selector(saveNote)
         save.isEnabled = false; view.addSubview(save)
@@ -105,24 +131,24 @@ final class ShareViewController: NSViewController {
         mode.setEnabled(!input.selectionHTML.isEmpty, forSegment: 1)
         mode.selectedSegment = input.pageHTML.isEmpty ? 1 : 0
         self.account.stringValue = account?.userID ?? "未登录为知云端"; self.account.toolTip = account?.userID
-        status.stringValue = "请确认账号和文件夹；上传需要联网。"
+        status.stringValue = account == nil ? "请先登录为知账号。" : "正在读取文件夹…"
         if account != nil { refreshCloudFolders() }
     }
 
     @objc private func loginCloud() {
         guard let window = view.window, submission.phase == .ready, !completed else { return }
         let alert = NSAlert(); alert.messageText = "登录为知笔记"
-        alert.informativeText = "通过 HTTPS 登录 note.wiz.cn，不读取旧剪藏器账号。密码不保存。"
+        alert.informativeText = "登录后可直接剪藏。记住的密码仅保存在系统钥匙串中。"
         alert.addButton(withTitle: "登录"); alert.addButton(withTitle: "取消")
-        let fields = NSView(frame: NSRect(x: 0, y: 0, width: 310, height: 102))
-        let user = NSTextField(frame: NSRect(x: 0, y: 70, width: 310, height: 26))
-        user.placeholderString = "为知账号"; user.stringValue = cloudAccount?.userID ?? ""
-        let password = NSSecureTextField(frame: NSRect(x: 0, y: 36, width: 310, height: 26)); password.placeholderString = "密码"
-        let remember = NSButton(checkboxWithTitle: "记住登录（令牌保存在本扩展钥匙串）", target: nil, action: nil)
-        remember.frame = NSRect(x: 0, y: 0, width: 310, height: 24); remember.state = .off
-        fields.addSubview(user); fields.addSubview(password); fields.addSubview(remember); alert.accessoryView = fields
+        let stored = credentials.loadSecret(cloudAccount?.userID)
+        let fields = ClipLoginForm(userID: cloudAccount?.userID ?? stored?.userID ?? "", secret: stored)
+        let user = fields.user, password = fields.password, remember = fields.remember
+        alert.accessoryView = fields
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self, response == .alertFirstButtonReturn, !self.completed else { password.stringValue = ""; return }
+            if let window = fields.window, !window.makeFirstResponder(nil) {
+                password.stringValue = ""; self.status.stringValue = "请完成账号和密码输入后重新登录。"; return
+            }
             self.setEditing(false); self.activity.startAnimation(nil); self.status.stringValue = "正在登录…"
             let secret = password.stringValue; password.stringValue = ""
             self.cloud.login(userID: user.stringValue.trimmingCharacters(in: .whitespacesAndNewlines), password: secret) { [weak self] result in
@@ -131,10 +157,9 @@ final class ShareViewController: NSViewController {
                 switch result {
                 case .success(let account):
                     self.cloudAccount = account; self.account.stringValue = account.userID; self.account.toolTip = account.userID
-                    let saved = remember.state != .on || ClipCredentialStore.saveCloud(account)
-                    if remember.state != .on { ClipCredentialStore.forgetCloud() }
+                    let saved = self.credentials.persist(account: account, password: secret, remember: remember.state == .on)
+                    self.persistenceWarning = saved ? nil : "已登录，但无法记住密码；下次需重新输入。"
                     self.refreshCloudFolders()
-                    if !saved { self.status.stringValue = "本次已登录；记住登录失败，下次需重新登录。" }
                 case .failure(let error): self.status.stringValue = error.localizedDescription
                 }
             }
@@ -144,18 +169,21 @@ final class ShareViewController: NSViewController {
     private func refreshCloudFolders() {
         guard let account = cloudAccount else { return }
         login.title = "切换账号"; login.isEnabled = false; save.isEnabled = false; activity.startAnimation(nil)
-        cloud.folders(account: account) { [weak self] result in
+        session.folders(account: account) { [weak self] result in
             guard let self, !self.completed else { return }
             self.login.isEnabled = true; self.activity.stopAnimation(nil)
             switch result {
-            case .success(let items):
+            case .success(let (renewed, items)):
+                self.cloudAccount = renewed
                 self.folders.removeAllItems(); self.folders.addItems(withTitles: items)
                 self.folders.selectItem(withTitle: "/网页剪藏/"); self.save.isEnabled = self.input != nil
-                self.status.stringValue = "确认后上传；服务器接收后，由主 App 正常同步。"
+                self.status.stringValue = self.persistenceWarning ?? "请选择文件夹，然后上传。"
             case .failure(let error): self.save.isEnabled = false; self.status.stringValue = error.localizedDescription
             }
         }
     }
+
+    @objc func openWebVersion(_ sender: Any?) { NSWorkspace.shared.open(ClipperLinks.webVersionURL) }
 
     private func setEditing(_ enabled: Bool) {
         titleField.isEnabled = enabled; folders.isEnabled = enabled; mode.isEnabled = enabled; login.isEnabled = enabled

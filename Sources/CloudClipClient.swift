@@ -23,6 +23,15 @@ struct CloudClipAccount {
 
 struct CloudClipReceipt { let taskID: String? }
 
+struct CloudClipAPIError: LocalizedError {
+    let code: Int
+    var errorDescription: String? {
+        if code == 301 { return "登录状态不可用，请重新登录（301）。" }
+        return "为知接口返回错误 \(code)，未确认保存成功。"
+    }
+    static func requiresLogin(_ error: Error) -> Bool { (error as? Self)?.code == 301 }
+}
+
 private final class CloudNoRedirects: NSObject, URLSessionTaskDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
@@ -92,7 +101,7 @@ final class CloudClipClient {
             transport(request) { result in
                 completion(result.flatMap { value in
                     guard Self.responseCode(value) == 200 else {
-                        return .failure(ClipperError.message("为知接口返回错误 \(Self.responseCode(value) ?? -1)；未确认保存成功。请检查账号权限或重新登录。"))
+                        return .failure(CloudClipAPIError(code: Self.responseCode(value) ?? -1))
                     }; return .success(value)
                 })
             }

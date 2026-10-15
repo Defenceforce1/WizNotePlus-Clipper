@@ -2,6 +2,7 @@
 import AppKit
 
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--cloud-self-test" { exit(cloudClipperSelfTest()) }
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--session-self-test" { exit(sessionClipperSelfTest()) }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--submission-self-test" { exit(submissionClipperSelfTest()) }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--share-ui-self-test" { exit(shareUIClipperSelfTest()) }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--public-image-self-test" {
@@ -52,7 +53,7 @@ if CommandLine.arguments.count > 1 {
 }
 
 final class ClipperHost: NSObject, NSApplicationDelegate {
-    static let webVersionURL = URL(string: "https://note.wiz.cn/")!
+    static let webVersionURL = ClipperLinks.webVersionURL
     var window: NSWindow?
     func applicationDidFinishLaunching(_ notification: Notification) {
         window = makeWindow(); window?.center(); window?.makeKeyAndOrderFront(nil)
@@ -65,7 +66,7 @@ final class ClipperHost: NSObject, NSApplicationDelegate {
             styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "WizNotePlus 网页剪藏"
         let text = NSTextField(wrappingLabelWithString:
-            "Apple Silicon 独立网页剪藏器 0.3.2\n\n在 Safari 网页点“分享 → WizNotePlus 网页剪藏”。\n登录为知账号，核对标题、文件夹与整页／选区。\n上传无需安装／打开主软件；需要联网。主软件之后正常同步即可。\n\n保存为 HTML＋图片／公式资源，不转成 Markdown。\n服务器接收后自动关闭分享，不查询最终保存结果。\n可在网页版检查笔记；本应用不读取旧剪藏器账号。\n\n未公证，真实云端与另一台 Mac 加载仍需验收。")
+            "WizNotePlus 网页剪藏 0.3.3\n\n在 Safari 中打开网页，点击“分享 → WizNotePlus 网页剪藏”。\n\n登录为知账号，选择文件夹，即可保存正文或选中内容。\n支持保留图片和静态公式，无需运行主 App。\n\n上传需要联网；勾选“记住密码”后，下次可继续使用。")
         text.frame = NSRect(x: 24, y: 76, width: 520, height: 250); window.contentView?.addSubview(text)
         let web = NSButton(title: "打开网页版", target: self, action: #selector(openWebVersion(_:)))
         web.bezelStyle = .rounded; web.frame = NSRect(x: 24, y: 22, width: 126, height: 32)

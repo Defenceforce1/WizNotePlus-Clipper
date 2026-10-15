@@ -92,6 +92,82 @@ func cloudClipperSelfTest() -> Int32 {
     return failures == 0 ? 0 : 1
 }
 
+func sessionClipperSelfTest() -> Int32 {
+    var checks = 0, failures = 0
+    func check(_ ok: Bool, _ name: String) { checks += 1; if !ok { failures += 1 }; print("\(ok ? "PASS" : "FAIL") \(name)") }
+    let account = try! CloudClipAccount(["token": "synthetic-old-token", "kbGuid": "00000000-0000-0000-0000-000000000001", "userGuid": "00000000-0000-0000-0000-000000000002", "userID": "saved@example.invalid"])
+    var renewedValue = account.dictionary; renewedValue["token"] = "synthetic-renewed-token"
+    let renewed = try! CloudClipAccount(renewedValue)
+    let secret = ClipLoginSecret(userID: account.userID, password: "synthetic-not-real")
+    struct Trace {
+        var requests: [URLRequest] = [], read = 0, stored = 0, done = 0, ok = false
+        var token = "", error: Error?
+    }
+    func scenario(folderCode: Int = 301, saved: ClipLoginSecret? = secret, loginOK: Bool = true,
+                  returned: CloudClipAccount = renewed, secondCode: Int = 200, saveOK: Bool = true,
+                  networkError: Bool = false) -> Trace {
+        var t = Trace(), gets = 0
+        let client = CloudClipClient(transport: { request, callback in
+            t.requests.append(request)
+            if request.url!.path == "/as/user/login" {
+                callback(.success(loginOK ? ["code": 200, "result": returned.dictionary] : ["code": 401]))
+            } else {
+                gets += 1
+                if networkError { callback(.failure(ClipperError.message("synthetic offline"))); return }
+                callback(.success(["code": gets == 1 ? folderCode : secondCode, "result": ["/网页剪藏/"]]))
+            }
+        })
+        let storage = ClipLoginStorage(loadSecret: { _ in t.read += 1; return saved },
+            saveAccount: { a in t.stored += 1; t.token = a.token; return saveOK }, saveSecret: { _ in false }, forget: {})
+        let session = CloudClipSession(client: client, storage: storage)
+        session.folders(account: account) { result in
+            t.done += 1
+            switch result { case .success(let (a, _)): t.ok = true; t.token = a.token
+            case .failure(let error): t.error = error }
+        }
+        return t
+    }
+    let valid = scenario(folderCode: 200)
+    check(valid.ok && valid.requests.count == 1 && valid.read == 0, "valid remembered token needs no password lookup or login")
+    let refreshed = scenario()
+    check(refreshed.ok && refreshed.done == 1 && refreshed.requests.count == 3, "expired session renews once then retries folder GET once")
+    check(refreshed.requests.map { $0.httpMethod! } == ["GET", "POST", "GET"] && !refreshed.requests.contains(where: { $0.url!.path == "/ks/gather" }), "session renewal cannot upload or retry a clipped note")
+    check(refreshed.token == renewed.token && refreshed.stored == 1 && refreshed.requests.last!.value(forHTTPHeaderField: "X-Wiz-Token") == renewed.token, "renewed token is stored and used for the folder retry")
+    let loginBody = try! JSONSerialization.jsonObject(with: refreshed.requests[1].httpBody!) as! [String: String]
+    check(loginBody["userId"] == secret.userID && loginBody["password"] == secret.password && refreshed.requests[1].url!.host == "note.wiz.cn" && refreshed.requests[1].url!.query!.contains("password") == false, "remembered password goes only in fixed official HTTPS login body")
+    let missing = scenario(saved: nil)
+    check(!missing.ok && missing.requests.count == 1 && CloudClipAPIError.requiresLogin(missing.error!), "missing remembered password requests manual login without retries")
+    let other = scenario(saved: ClipLoginSecret(userID: "other@example.invalid", password: "synthetic-other"))
+    check(!other.ok && other.requests.count == 1, "stored password for another account is never submitted")
+    let denied = scenario(loginOK: false)
+    check(!denied.ok && denied.requests.count == 2 && denied.stored == 0, "failed automatic login stops without storing or retrying")
+    let twice = scenario(secondCode: 301)
+    check(!twice.ok && twice.requests.count == 3 && twice.done == 1, "repeated expiry cannot cause an infinite login loop")
+    let server = scenario(folderCode: 500), offline = scenario(networkError: true)
+    check(!server.ok && server.requests.count == 1 && server.read == 0, "non-auth API errors do not read saved password or relogin")
+    check(!offline.ok && offline.requests.count == 1 && offline.read == 0, "offline requests do not relogin or erase remembered credentials")
+    var different = renewed.dictionary; different["kbGuid"] = "00000000-0000-0000-0000-000000000003"
+    let mismatch = scenario(returned: try! CloudClipAccount(different))
+    check(!mismatch.ok && mismatch.stored == 0 && mismatch.requests.count == 2, "unexpected KB from relogin cannot switch upload destination")
+    let storeFail = scenario(saveOK: false)
+    check(!storeFail.ok && storeFail.requests.count == 2, "keychain update failure is visible instead of silently looping")
+    var accountWrites = 0, passwordWrites = 0, forgotten = 0
+    var allowPasswordWrite = true
+    let memory = ClipLoginStorage(loadSecret: { _ in nil }, saveAccount: { _ in accountWrites += 1; return true },
+        saveSecret: { s in passwordWrites += 1; return allowPasswordWrite && s.userID == account.userID && s.password == secret.password }, forget: { forgotten += 1 })
+    check(memory.persist(account: account, password: secret.password, remember: true) && accountWrites == 1 && passwordWrites == 1 && forgotten == 0, "remember choice persists account and password through injected store")
+    check(memory.persist(account: account, password: secret.password, remember: false) && forgotten == 1 && passwordWrites == 1, "unchecking remember removes saved login without writing password")
+    allowPasswordWrite = false
+    check(!memory.persist(account: account, password: secret.password, remember: true) && forgotten == 2, "partial credential persistence failure clears inconsistent saved state")
+    var uploads = 0
+    let uploadClient = CloudClipClient(transport: { _, completion in uploads += 1; completion(.success(["code": 301])) })
+    var uploadFailed = false
+    uploadClient.upload(body: [:], account: account) { if case .failure(let error) = $0 { uploadFailed = CloudClipAPIError.requiresLogin(error) } }
+    check(uploadFailed && uploads == 1, "API 301 from upload never automatically resends POST")
+    print("Remembered session checks: \(checks), failures: \(failures). Memory store only; no real keychain, password or cloud.")
+    return failures == 0 ? 0 : 1
+}
+
 private final class CaptureTestRunner: NSObject, WKNavigationDelegate {
     var done = false, code: Int32 = 1
     var contentCases: String?
@@ -270,7 +346,7 @@ func shareUIClipperSelfTest() -> Int32 {
         ("compact 460 by 340 native form", controller.preferredContentSize == NSSize(width: 460, height: 340)),
         ("no local destination or pairing fields", segments.count == 1 && !views.contains(where: { $0 is NSSecureTextField }) && !text.contains("本机客户端")),
         ("no summary or preview widgets", !views.contains(where: { $0 is NSTextView || $0 is WKWebView || $0 is NSScrollView }) && !buttons.contains(where: { $0.title.contains("预览") })),
-        ("native cloud login upload cancel controls remain", Set(buttons.map { $0.title }) == Set(["登录账号", "上传", "取消"])),
+        ("native cloud login upload cancel and web controls remain", Set(buttons.map { $0.title }) == Set(["登录账号", "上传", "取消", "为知笔记网页版"])),
         ("required metadata labels remain", ["标题", "账号", "文件夹", "内容"].allSatisfy({ text.contains($0) })),
         ("all controls remain inside compact form", root.subviews.allSatisfy({ root.bounds.contains($0.frame) })),
         ("only page and selection modes remain", segments.first?.segmentCount == 2 && segments.first?.label(forSegment: 0) == "保存整页" && segments.first?.label(forSegment: 1) == "保存选中"),
@@ -325,7 +401,17 @@ func shareUIClipperSelfTest() -> Int32 {
     let hostButtons = descendants(hostWindow.contentView!).compactMap { $0 as? NSButton }
     let web = hostButtons.first(where: { $0.title == "打开网页版" })
     check(web != nil && web?.action == #selector(ClipperHost.openWebVersion(_:)) && (web?.target as? ClipperHost) === host, "startup page has a wired open-web-version button")
-    check(ClipperHost.webVersionURL.absoluteString == "https://note.wiz.cn/" && ClipperHost.webVersionURL.query == nil, "web button uses only the official HTTPS URL without account tokens")
+    check(ClipperHost.webVersionURL.absoluteString == "https://www.wiz.cn/xapp" && ClipperHost.webVersionURL.query == nil, "web button uses the requested official HTTPS URL without account tokens")
+    let shareWeb = buttons.first(where: { $0.title == "为知笔记网页版" })
+    check(shareWeb?.action == #selector(ShareViewController.openWebVersion(_:)) && (shareWeb?.target as? ShareViewController) === controller, "share form web button is wired to the controller")
+    check(shareWeb?.frame.minX == 24 && shareWeb!.frame.maxY < 42 && shareWeb!.frame.maxX < 254, "web button sits at lower left without overlapping upload or status")
+    let form = ClipLoginForm(userID: "saved@example.invalid", secret: ClipLoginSecret(userID: "saved@example.invalid", password: "synthetic-not-real"))
+    check(form.password.cell is NSSecureTextFieldCell && form.password.stringValue == "synthetic-not-real" && form.remember.state == .on, "remembered password prefills a secure field with visible opt-out")
+    form.user.stringValue = "other@example.invalid"; form.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification))
+    check(form.password.stringValue.isEmpty, "changing account clears another account's remembered password")
+    let otherForm = ClipLoginForm(userID: "other@example.invalid", secret: ClipLoginSecret(userID: "saved@example.invalid", password: "synthetic-not-real"))
+    check(otherForm.password.stringValue.isEmpty, "mismatched account never receives saved password")
+    check(!text.contains("API") && !text.contains("未公证") && !text.contains("无需打开主 App"), "share form removes redundant implementation notices")
     hostWindow.close()
     print("Share UI checks: \(checks.count + added), failures: \(failures). Synthetic account only; no keychain accessed.")
     return failures == 0 ? 0 : 1
