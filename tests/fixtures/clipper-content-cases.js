@@ -103,5 +103,18 @@
   window.getSelection().removeAllRanges(); range = document.createRange(); range.setStart(bounds.firstChild,1); range.collapse(true); window.getSelection().addRange(range);
   ExtensionPreprocessingJS.run({completionFunction:function(x){r=x;}});
   check('collapsed selection never captures a surrounding formula or paragraph', r.selectionHTML === '');
+  capture('<style>pre{font-family:Menlo,monospace;font-size:13.6px;line-height:23.8px} #dashed-code{display:block;border:1px dashed #ccc;padding:6.8px;background:#000;color:#ddd} #dashed-code span{color:#c397d8}</style><main><pre><code id="dashed-code"><span>Clear</span>[n,f,g];\nf=1;\n    If[g!=1,Print["test"]]</code></pre></main>');
+  var sourceCode = document.querySelector('pre'), expectedCode = sourceCode.textContent;
+  ExtensionPreprocessingJS.run({completionFunction:function(x){r=x;}});
+  doc = new DOMParser().parseFromString(r.pageHTML,'text/html');
+  check('whole highlighted code retains exact whitespace and content', doc.querySelector('pre').textContent === expectedCode);
+  check('block code has no repeated dashed inline border', doc.querySelector('code').style.display === 'block' && doc.querySelector('code').style.borderStyle === 'none' && doc.querySelector('pre').style.borderStyle === 'none');
+  check('nested code has no duplicated padding', doc.querySelector('code').style.padding === '0px' && doc.querySelector('pre').style.padding === '12px');
+  check('highlight canvas moves to outer pre without losing token colors', doc.querySelector('pre').style.backgroundColor === 'rgb(0, 0, 0)' && doc.querySelector('code span').style.color === 'rgb(195, 151, 216)');
+  check('source monospace font size and line height are preserved', doc.querySelector('pre').style.fontFamily.includes('Menlo') && Math.abs(parseFloat(doc.querySelector('pre').style.fontSize) - 13.6) < 0.01 && Math.abs(parseFloat(doc.querySelector('pre').style.lineHeight) - 23.8) < 0.01);
+  range = document.createRange(); range.selectNodeContents(sourceCode); window.getSelection().addRange(range);
+  ExtensionPreprocessingJS.run({completionFunction:function(x){r=x;}});
+  doc = new DOMParser().parseFromString(r.selectionHTML,'text/html');
+  check('selected highlighted code keeps exact source and no dashed border', doc.querySelector('pre').textContent === expectedCode && doc.querySelector('code').style.borderStyle === 'none' && doc.querySelector('code').style.display === 'block');
   return checks;
 }());

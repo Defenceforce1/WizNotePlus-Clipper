@@ -177,17 +177,35 @@ var ExtensionPreprocessingJS = {
         if (!item.closest('.wiz-clip-formula')) normalizeMath(item, originalNodes.get(item));
       });
       copy.querySelectorAll('pre,code').forEach(function (item) {
-        item.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-        item.style.fontWeight = '400'; item.style.lineHeight = '1.5'; item.style.tabSize = '4';
+        if (!/\bmonospace\b/i.test(item.style.fontFamily)) item.style.fontFamily = 'Menlo, Monaco, Consolas, monospace';
+        if (!item.style.fontWeight) item.style.fontWeight = '400';
+        if (!item.style.lineHeight || item.style.lineHeight === 'normal') item.style.lineHeight = '1.5';
+        item.style.tabSize = '4';
         if (item.localName === 'pre') {
           item.style.whiteSpace = 'pre-wrap'; item.style.overflowWrap = 'anywhere'; item.style.wordBreak = 'normal';
-          item.style.padding = '12px'; item.style.fontSize = '13px';
+          item.style.padding = '12px';
+          if (!item.style.fontSize) item.style.fontSize = '13px';
+          item.style.borderWidth = '0'; item.style.borderStyle = 'none';
+          // Highlight.js puts its canvas on a block-level CODE, not PRE.
+          // Move that canvas to the single outer block before flattening CODE.
+          var innerCode = item.querySelector('code');
+          if (innerCode && (!item.style.backgroundColor || item.style.backgroundColor === 'rgba(0, 0, 0, 0)')) {
+            var codeBackground = innerCode.style.backgroundColor;
+            if (codeBackground && codeBackground !== 'transparent' && !/rgba\([^)]*,\s*0\s*\)$/.test(codeBackground)) {
+              item.style.backgroundColor = codeBackground;
+              item.style.color = innerCode.style.color || item.style.color;
+            }
+          }
           var foreground = item.style.color.match(/^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
           if (!item.style.backgroundColor || item.style.backgroundColor === 'rgba(0, 0, 0, 0)') {
             item.style.backgroundColor = foreground && Math.min(+foreground[1], +foreground[2], +foreground[3]) > 200 ? '#1e1f22' : '#f5f6f8';
           }
         } else if (item.closest('pre')) {
-          item.style.whiteSpace = 'inherit'; item.style.fontSize = 'inherit'; item.style.backgroundColor = 'transparent';
+          item.style.whiteSpace = 'inherit'; item.style.fontSize = 'inherit'; item.style.lineHeight = 'inherit'; item.style.backgroundColor = 'transparent';
+          // Otherwise a source dashed border becomes an inline border repeated
+          // on every wrapped line. Only PRE owns padding and decoration.
+          item.style.display = 'block'; item.style.padding = '0'; item.style.margin = '0';
+          item.style.borderWidth = '0'; item.style.borderStyle = 'none';
         } else {
           item.style.whiteSpace = 'break-spaces';
           if (articleMode === 'selection') item.style.color = 'inherit';
@@ -256,7 +274,9 @@ var ExtensionPreprocessingJS = {
               item.setAttribute('style', value.split(';').filter(function (declaration) {
                 var colon = declaration.indexOf(':'), key = declaration.slice(0, colon).trim().toLowerCase();
                 var val = declaration.slice(colon + 1).trim();
-                return colon > 0 && properties.concat(['max-width','height']).indexOf(key) >= 0 && val.length <= 160
+                var permitted = properties.concat(['max-width','height']).indexOf(key) >= 0
+                  || (tag === 'code' && key === 'display' && val === 'block');
+                return colon > 0 && permitted && val.length <= 160
                   && !/url\s*\(|expression\s*\(|[{}<>\\]/i.test(val);
               }).join(';'));
             }

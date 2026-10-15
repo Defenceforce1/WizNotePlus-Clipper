@@ -27,6 +27,9 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--wiki-capture
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--forum-capture-self-test" {
     exit(captureClipperSelfTest(fixture: CommandLine.arguments[2], publicForum: true))
 }
+if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--code-capture-self-test" {
+    exit(captureClipperSelfTest(fixture: CommandLine.arguments[2], codeOnly: true))
+}
 
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--input-self-test" {
     var checks = 0, failures = 0

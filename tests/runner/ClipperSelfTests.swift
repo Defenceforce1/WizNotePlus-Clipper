@@ -171,7 +171,7 @@ func sessionClipperSelfTest() -> Int32 {
 private final class CaptureTestRunner: NSObject, WKNavigationDelegate {
     var done = false, code: Int32 = 1
     var contentCases: String?
-    var publicWiki = false, publicForum = false, rendering = false
+    var publicWiki = false, publicForum = false, codeOnly = false, rendering = false
     let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 900, height: 600), configuration: WKWebViewConfiguration())
     override init() { super.init(); web.navigationDelegate = self }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
@@ -188,6 +188,7 @@ private final class CaptureTestRunner: NSObject, WKNavigationDelegate {
             guard error == nil, let data = result as? [String: Any], let html = data["pageHTML"] as? String else {
                 print("FAIL WebKit snapshot: \(error?.localizedDescription ?? "no HTML")"); self.done = true; return
             }
+            if self.codeOnly { self.checkCodeOnly(wholeHTML: html); return }
             if self.publicForum {
                 let checks: [(String, Bool)] = [
                     ("public esoTalk title and all four loaded posts retained", html.contains("conversationTitle") && ["p103809", "p103810", "p103811", "p103832"].allSatisfy { html.contains($0) }),
@@ -261,6 +262,45 @@ private final class CaptureTestRunner: NSObject, WKNavigationDelegate {
             }
         }
     }
+    func checkCodeOnly(wholeHTML: String) {
+        let js = #"""
+        (function(){
+          var checks=[], selection=window.getSelection(), originals=Array.from(document.querySelectorAll('pre'));
+          function check(name,ok){checks.push({name:name,ok:!!ok});}
+          var whole=new DOMParser().parseFromString(captured.pageHTML,'text/html'), blocks=Array.from(whole.querySelectorAll('pre'));
+          check('code-only replay includes both public code blocks',blocks.length===2&&originals.length===2);
+          check('whole code has identical characters whitespace and line breaks',blocks.length===originals.length&&blocks.every(function(p,i){return p.textContent===originals[i].textContent;}));
+          check('whole code has no dashed borders or nested padding',blocks.every(function(p){var c=p.querySelector('code');return c&&p.style.borderStyle==='none'&&c.style.borderStyle==='none'&&c.style.padding==='0px'&&c.style.display==='block';}));
+          check('code keeps source monospace size and leading',blocks.every(function(p,i){var s=getComputedStyle(originals[i]);return p.style.fontFamily.includes('Menlo')&&p.style.fontSize===s.fontSize&&p.style.lineHeight===s.lineHeight;}));
+          check('code canvas retains readable source highlighting',blocks.every(function(p){return p.style.backgroundColor==='rgb(0, 0, 0)'&&p.querySelector('.hljs-keyword').style.color==='rgb(195, 151, 216)';}));
+          var previews=[], exact=true, clean=true;
+          originals.forEach(function(p){selection.removeAllRanges();var range=document.createRange();range.selectNodeContents(p);selection.addRange(range);var r;ExtensionPreprocessingJS.run({completionFunction:function(x){r=x;}});var doc=new DOMParser().parseFromString(r.selectionHTML,'text/html'),saved=doc.querySelector('pre'),c=saved&&saved.querySelector('code');exact=exact&&saved&&saved.textContent===p.textContent;clean=clean&&c&&c.style.display==='block'&&c.style.borderStyle==='none'&&saved.style.borderStyle==='none';previews.push(r.selectionHTML);});
+          selection.removeAllRanges();
+          check('both selected code blocks retain exact source text',exact);
+          check('both selected code blocks eliminate fragmented dashed decoration',clean);
+          check('code-only fixture never includes article prose or formula markup',!whole.querySelector('math,.postHeader,.scrubberColumn'));
+          return {checks:checks,preview:previews.join('<hr>')};
+        }());
+        """#
+        web.evaluateJavaScript(js) { result, error in
+            guard error == nil, let value = result as? [String: Any], let checks = value["checks"] as? [[String: Any]], checks.count == 8 else {
+                print("FAIL public code-only replay: \(error?.localizedDescription ?? "no result")"); self.code = 1; self.done = true; return
+            }
+            self.code = 0
+            for item in checks {
+                let ok = item["ok"] as? Bool == true
+                print("\(ok ? "PASS" : "FAIL") \(item["name"] as? String ?? "code check")")
+                if !ok { self.code = 1 }
+            }
+            if let path = ProcessInfo.processInfo.environment["WIZNOTE_CLIPPER_TEST_ARTIFACT_DIR"], path.hasPrefix("/"), let preview = value["preview"] as? String {
+                try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+                try? preview.write(toFile: path + "/code-selected.html", atomically: true, encoding: .utf8)
+                try? wholeHTML.write(toFile: path + "/code-whole.html", atomically: true, encoding: .utf8)
+                self.rendering = true
+                self.web.loadHTMLString("<!doctype html><meta charset='utf-8'><body style='margin:24px;font:16px/1.55 system-ui'>" + preview, baseURL: nil)
+            } else { self.done = true }
+        }
+    }
     func checkForumSelections(wholeHTML: String) {
         let js = #"""
         (function(){
@@ -319,15 +359,16 @@ private final class CaptureTestRunner: NSObject, WKNavigationDelegate {
         }
     }
 }
-func captureClipperSelfTest(fixture: String, publicWiki: Bool = false, publicForum: Bool = false) -> Int32 {
+func captureClipperSelfTest(fixture: String, publicWiki: Bool = false, publicForum: Bool = false, codeOnly: Bool = false) -> Int32 {
     // Only local named synthetic fixture; no credentials and no production endpoint.
-    guard fixture.hasPrefix("/"), fixture.hasSuffix(publicWiki ? "/wiki-public-original.html" : publicForum ? "/chaoli-12353-original.html" : "/clipper-cloud-page.html"),
+    guard fixture.hasPrefix("/"), fixture.hasSuffix(codeOnly ? "/chaoli-code-original.html" : publicWiki ? "/wiki-public-original.html" : publicForum ? "/chaoli-12353-original.html" : "/clipper-cloud-page.html"),
           let html = try? String(contentsOfFile: fixture, encoding: .utf8) else { return 2 }
     let app = NSApplication.shared; app.setActivationPolicy(.accessory); app.finishLaunching()
     let runner = CaptureTestRunner()
     runner.publicWiki = publicWiki
     runner.publicForum = publicForum
-    if !publicWiki && !publicForum { runner.contentCases = try? String(contentsOf: URL(fileURLWithPath: fixture).deletingLastPathComponent().appendingPathComponent("clipper-content-cases.js"), encoding: .utf8) }
+    runner.codeOnly = codeOnly
+    if !publicWiki && !publicForum && !codeOnly { runner.contentCases = try? String(contentsOf: URL(fileURLWithPath: fixture).deletingLastPathComponent().appendingPathComponent("clipper-content-cases.js"), encoding: .utf8) }
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
     window.title = "剪藏静态捕获合成测试"; window.contentView = runner.web; window.orderFront(nil)
     WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "synthetic-no-network",
