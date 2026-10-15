@@ -161,9 +161,29 @@ final class ClipResources {
                 if let usable { embedded += usable.count } else { missing += matches.count }
                 for match in matches.reversed() {
                     guard let range = Range(match.range, in: output) else { continue }
-                    let alt = "图片 \(current + 1)"
-                    let replacement = usable.map { "<img src=\"data:image/png;base64,\($0.base64EncodedString())\" alt=\"\(alt)\" style=\"max-width:100%;height:auto\">" }
-                        ?? "<span>[\(alt)未能嵌入，请查看原网页]</span>"
+                    let original = String(output[range])
+                    let replacement: String
+                    if let usable {
+                        // Keep sanitized dimensions/styles and meaningful alt,
+                        // rather than stretching every inline image as a block.
+                        let src = try! NSRegularExpression(pattern: #"\bsrc\s*=\s*"[^"]*""#, options: [.caseInsensitive])
+                        replacement = src.stringByReplacingMatches(in: original, range: NSRange(original.startIndex..., in: original),
+                            withTemplate: "src=\"data:image/png;base64," + usable.base64EncodedString() + "\"")
+                            .replacingOccurrences(of: " " + marker, with: "")
+                    } else {
+                        func escaped(_ value: String) -> String {
+                            value.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+                                .replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;")
+                        }
+                        let altPattern = try! NSRegularExpression(pattern: #"\balt\s*=\s*"([^"]*)""#, options: [.caseInsensitive])
+                        let altMatch = altPattern.firstMatch(in: original, range: NSRange(original.startIndex..., in: original))
+                        let alt = altMatch.flatMap { Range($0.range(at: 1), in: original) }.map { String(original[$0].prefix(160)) } ?? ""
+                        let label = escaped(alt.isEmpty ? "原图" : alt)
+                        if let address = URL(string: urls[current]), ClipResourcePolicy.urlIsAllowed(address) {
+                            replacement = "<a class=\"wiz-clip-resource-fallback\" href=\"" + escaped(address.absoluteString)
+                                + "\" title=\"图片未嵌入，点击查看原图\">" + label + "</a>"
+                        } else { replacement = "<span>" + label + "</span>" }
+                    }
                     output.replaceSubrange(range, with: replacement)
                 }
                 progress(index, urls.count); step()

@@ -19,7 +19,7 @@ var ExtensionPreprocessingJS = {
       target.setAttribute('style', result.join(';'));
     }
     function normalizeMath(root, original) {
-      var math = root.querySelector('math');
+      var math = root.localName === 'math' ? root : root.querySelector('math');
       if (!math && original && window.MathJax && window.MathJax.Hub) {
         try {
           var jax = window.MathJax.Hub.getJaxFor(original);
@@ -34,7 +34,7 @@ var ExtensionPreprocessingJS = {
       [visible].concat(Array.from(visible.querySelectorAll('*'))).forEach(function (item) {
         item.removeAttribute('style'); item.removeAttribute('hidden'); item.removeAttribute('aria-hidden');
       });
-      var display = root.classList.contains('MathJax_Display') || root.classList.contains('katex-display')
+      var display = root.classList.contains('MathJax_Display') || root.classList.contains('MathJax_SVG_Display') || root.classList.contains('katex-display')
         || root.getAttribute('display') === 'true' || visible.getAttribute('display') === 'block';
       visible.setAttribute('display', display ? 'block' : 'inline');
       var wrapper = document.createElement(display ? 'div' : 'span');
@@ -53,11 +53,21 @@ var ExtensionPreprocessingJS = {
         if (color && color !== 'transparent' && !/rgba\([^)]*,\s*0\s*\)$/.test(color)) { copy.style.backgroundColor = color; break; }
         backdrop = backdrop.parentElement;
       }
-      copy.querySelectorAll('.katex-display,.MathJax_Display,mjx-container,.katex,.MathJax,.MathJax_SVG').forEach(function (root) {
+      // Wikipedia supplies both accessibility MathML and fallback images in the
+      // same element. Keep one semantic formula, not MathML plus a failed image.
+      var formulaRoots = '.mwe-math-element,.katex-display,.MathJax_Display,.MathJax_SVG_Display,mjx-container,.katex,.MathJax,.MathJax_SVG';
+      copy.querySelectorAll('.MathJax_Preview').forEach(function (item) {
+        var sibling = item.nextElementSibling;
+        if (sibling && sibling.matches(formulaRoots)) item.remove();
+      });
+      copy.querySelectorAll(formulaRoots).forEach(function (root) {
         if (copy.contains(root)) normalizeMath(root, originalNodes.get(root));
       });
       copy.querySelectorAll('.MathJax_Preview,.MJX_Assistive_MathML,mjx-assistive-mml').forEach(function (item) {
         if (!normalizeMath(item, originalNodes.get(item))) item.remove();
+      });
+      copy.querySelectorAll('math').forEach(function (item) {
+        if (!item.closest('.wiz-clip-formula')) normalizeMath(item, originalNodes.get(item));
       });
       copy.querySelectorAll('script,style,iframe,object,embed,input,button,select,textarea,template,link,meta,base').forEach(function (item) { item.remove(); });
       var walker = document.createTreeWalker(copy, NodeFilter.SHOW_COMMENT), comments = [];
@@ -65,6 +75,10 @@ var ExtensionPreprocessingJS = {
       comments.forEach(function (item) { item.remove(); });
       copy.querySelectorAll('img').forEach(function (item) {
         var original = originalNodes.get(item), raw = original ? (original.currentSrc || original.src) : item.getAttribute('src');
+        if (original && original.isConnected) {
+          var computed = window.getComputedStyle(original);
+          if (computed.display === 'none' || computed.visibility === 'hidden') { item.remove(); return; }
+        }
         item.removeAttribute('srcset'); item.removeAttribute('sizes');
         item.removeAttribute('data-wiz-clip-resource');
         if (original && original.complete && original.naturalWidth && original.naturalWidth * original.naturalHeight <= 2000000) {
@@ -82,13 +96,19 @@ var ExtensionPreprocessingJS = {
           var id = resources.indexOf(address.href);
           if (id < 0) { if (resources.length >= 48) throw new Error('too many images'); id = resources.push(address.href) - 1; }
           item.setAttribute('src', address.href); item.setAttribute('data-wiz-clip-resource', String(id));
-        } catch (_) { item.replaceWith(document.createTextNode('[图片未嵌入，请查看原网页]')); warnings++; }
+        } catch (_) {
+          var fallback = document.createElement('a'); fallback.textContent = item.getAttribute('alt') || '原图';
+          fallback.setAttribute('href', location.href); fallback.setAttribute('title', '图片未能嵌入，请查看原网页');
+          item.replaceWith(fallback); warnings++;
+        }
       });
       function clean(root) {
         Array.from(root.children).forEach(function (item) {
           var tag = item.localName.toLowerCase();
           if (tag === 'svg' || tag === 'canvas') {
-            item.replaceWith(document.createTextNode('[图形未能静态保存，请查看原网页]')); warnings++; return;
+            var fallback = document.createElement('a'); fallback.textContent = '图形';
+            fallback.setAttribute('href', location.href); fallback.setAttribute('title', '图形未能静态保存，请查看原网页');
+            item.replaceWith(fallback); warnings++; return;
           }
           clean(item);
           if (!htmlTags.has(tag) && !mathTags.has(tag)) { item.replaceWith.apply(item, Array.from(item.childNodes)); return; }

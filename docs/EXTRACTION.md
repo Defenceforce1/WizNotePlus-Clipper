@@ -1,5 +1,7 @@
 # 独立工程迁移记录
 
+本文及 source-baseline.sha256 固定记录原始 0.2.0 拆分基线，不用来检查后来 0.3.0 修改后的文件。当前版本与验证以 README／release-0.3.0.md 为准，历史基线提交仍完整保留。
+
 2026-10-15，用户要求主项目收尾清理，并将剪藏器独立为本地／GitHub 项目 `WizNotePlus-Clipper`。
 
 来源：[WizNotePlus 4757df7](https://github.com/Defenceforce1/WizNotePlus/tree/4757df7bb8aed65172d6b816f8036c0105b32bb8/build/osx/native-clipper)，原候选版本 0.2.0，宿主与扩展内部版本 3。历史仍保留在原仓库，不改写旧提交、不从旧主仓库批量提取账号或二进制。

@@ -6,10 +6,9 @@
 <key>CFBundleName</key><string>WizNotePlus 网页剪藏</string>
 <key>CFBundleDisplayName</key><string>WizNotePlus 网页剪藏</string>
 <key>CFBundlePackageType</key><string>XPC!</string>
-<key>CFBundleVersion</key><string>3</string>
-<key>CFBundleShortVersionString</key><string>0.2.0</string>
+<key>CFBundleVersion</key><string>4</string>
+<key>CFBundleShortVersionString</key><string>0.3.0</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
-<key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 <key>NSExtension</key><dict>
 <key>NSExtensionPointIdentifier</key><string>com.apple.share-services</string>
 <key>NSExtensionPrincipalClass</key><string>WizNotePlusShareViewController</string>

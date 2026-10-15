@@ -21,13 +21,15 @@ struct CloudClipAccount {
     }
 }
 
+struct CloudClipReceipt { let taskID: String? }
+
 private final class CloudNoRedirects: NSObject, URLSessionTaskDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
                     completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
 }
 
-// Official discovery publishes gather/status. Reproduce its HTML frame protocol,
+// Reproduce the official HTML frame upload protocol,
 // not Markdown and not a speculative switch to a community-only create endpoint.
 // No arbitrary cloud host, certificate override, auto POST retries or credentials
 // in URLs. Authentication is sent only to the fixed official HTTPS origin.
@@ -69,7 +71,7 @@ final class CloudClipClient {
                       body: [String: Any]? = nil, account: CloudClipAccount? = nil,
                       completion: @escaping (Result<[String: Any], Error>) -> Void) {
         do {
-            guard ["/as/user/login", "/as/user/info", "/ks/gather", "/ks/gather/status"].contains(path)
+            guard ["/as/user/login", "/ks/gather"].contains(path)
                 || (path.hasPrefix("/ks/category/all/") && UUID(uuidString: String(path.dropFirst(17))) != nil)
                 else { throw ClipperError.message("无效官方接口") }
             var parts = URLComponents(string: "https://note.wiz.cn" + path)!
@@ -130,28 +132,13 @@ final class CloudClipClient {
             + "save-command='save_content' userid='\(account.userID)' location='\(encoded(folder))' comment='' tag=''"
         return ["type": "clipper", "customId": requestID, "data": data]
     }
-    func upload(body: [String: Any], account: CloudClipAccount, completion: @escaping (Result<String, Error>) -> Void) {
+    func upload(body: [String: Any], account: CloudClipAccount, completion: @escaping (Result<CloudClipReceipt, Error>) -> Void) {
         send("/ks/gather", method: "POST", body: body, account: account) { result in
-            completion(result.flatMap { value in
-                guard let id = value["id"], !(id is NSNull), !String(describing: id).isEmpty else {
-                    return .failure(ClipperError.message("服务器未返回剪藏任务编号；请先在网页版检查，勿重复上传"))
-                }; return .success(String(describing: id))
-            })
-        }
-    }
-    // Only status 0/101 confirms completion. A queued task is NOT a saved note.
-    func status(id: String?, requestID: String, account: CloudClipAccount,
-                completion: @escaping (Result<Int?, Error>) -> Void) {
-        var query = [URLQueryItem(name: "custom_id", value: requestID)]
-        if let id { query.append(URLQueryItem(name: "id", value: id)) }
-        send("/ks/gather/status", query: query, account: account) { result in
-            completion(result.flatMap { value in
-                if let n = value["status"] as? Int, [0, 101].contains(n) { return .success(n) }
-                if let text = value["status"] as? String {
-                    if ["doing", "new"].contains(text) { return .success(nil) }
-                    if let n = Int(text), [0, 101].contains(n) { return .success(n) }
-                }
-                return .failure(ClipperError.message("服务器未确认剪藏完成；请在网页版检查该笔记"))
+            // HTTP/API acknowledgement is not final saved-note confirmation.
+            // An API success without an optional task ID must not trigger retry.
+            completion(result.map { value in
+                let id = (value["id"] as? String) ?? (value["id"] as? NSNumber)?.stringValue
+                return CloudClipReceipt(taskID: id?.isEmpty == false ? id : nil)
             })
         }
     }

@@ -16,3 +16,4 @@ outputs/
 .env.*
 *.xcuserstate
 xcuserdata/
+/Resources/AppIcon.icns
