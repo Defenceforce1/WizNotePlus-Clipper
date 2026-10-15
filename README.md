@@ -2,7 +2,7 @@
 
 独立的 Apple Silicon macOS 网页剪藏工程，沿用 Safari「分享 → WizNotePlus 网页剪藏」入口。主 App 在[另一个仓库](https://github.com/Defenceforce1/WizNotePlus/tree/compat/macos-arm64-qt6)维护，本工程不依赖其源码、Qt 或主程序构建。
 
-当前为 **0.3.5 自用修订版**：采用已选定的圆形剪刀 A 版构图，新系统使用原生分层图标，旧系统保留 ICNS 兼容图；宿主和分享扩展携带同一套图标资源。运行功能与 0.3.4 一致，不改登录、上传或笔记格式；主 App 及其原版图标完全不变。详见[本版说明](docs/release-0.3.5.md)与[图标说明](docs/ICON.md)。开发签名、未公证，非为知官方发行。
+当前为 **0.3.6 自用修订版**：新增 esoTalk／超理讨论正文提取，保留当前已加载的全部楼层、作者、公式和代码，移除侧栏与页尾界面；修正透明深色页面在浅色笔记中白字不可见的问题。宿主保留圆形剪刀 A 原生图标，分享扩展单独提供紧凑静态图标；测试工具不再装入 App。登录、密码存储及上传协议不变；主 App 及其原版图标完全不变。详见[本版说明](docs/release-0.3.6.md)与[图标说明](docs/ICON.md)。开发签名、未公证，非为知官方发行。
 
 ## 当前能力和限制
 
@@ -27,20 +27,21 @@ bash scripts/build.sh /absolute/new-output-folder
 bash scripts/test.sh '/absolute/new-output-folder/WizNotePlus Web Clipper.app'
 ```
 
-第一条省略签名身份时使用 ad-hoc，运行输入、模拟云端／资源、记住登录和只推送检查；第二条验证表单与阻断网络捕获。无本地图形的公开源码默认 141 项。本机带原生图标时另有 Apple 编译2项、宿主/扩展图标包6项，并以固定 Wikipedia 页面阻断网络回放10项，共159项。测试不读真实凭据、不登录或上传笔记；实际 Safari 菜单显示、钥匙串授权、云端保存和同步效果仍需用户验收。
+第一条省略签名身份时使用 ad-hoc，运行输入、模拟云端／资源、记住登录和只推送检查；第二条验证表单与阻断网络捕获。无本地图形的公开源码默认 152 项，本机另有图标9项、固定 Wikipedia 回放10项、用户指定公开超理页面回放8项，共179项。测试工具生成在输出目录的 `Tests/ClipperChecks.app` 中，不随 App 分发；不要再用生产宿主执行测试选项。测试不读真实凭据、不登录或上传笔记；实际 Safari 面板显示、钥匙串授权、云端保存和同步效果需单独验收。
 
 本机 Safari 试用可在构建命令最后传入已有的 `Apple Development: …` 身份，不需要提供密码或私钥。开发签名／临时签名都不是 Developer ID 或公证，不保证另一台 Mac 无条件加载。更新已安装程序前，应先关闭分享窗口和剪藏器，完整保留上一版回退；不自动操作真实账号。
 
-构建优先编译本机 `Resources/AppIcon.icon` 的原始 PNG 图层，供系统处理材质、轮廓和阴影；`Resources/AppIcon-final.icns` 仅作旧系统兼容，不再次缩放或叠加效果。没有原生源时可用静态资源回退，无本地图形时用系统占位图标。原图及品牌派生资源仅本机自用，不提交或公开分发；此前被否决的重绘/裸剪刀和冗余构建已移入可恢复废纸篓。不要用 Finder 自定义图标改写签名 App 包。
+构建优先为宿主编译本机 `Resources/AppIcon.icon` 的原始 PNG 图层；`Resources/AppIcon-final.icns` 是其旧系统兼容图。分享扩展只从已批准静态图机械缩小成16–256像素的 `ShareIcon.icns`，不再复制整个原生目录，不改原图比例和边距。没有原生源时可用静态资源回退，无本地图形时用系统占位图标。原图及品牌派生资源仅本机自用，不提交或公开分发。不要用 Finder 自定义图标改写签名 App 包。
 
 ## 工程结构
 
 ```text
-Sources/          Swift 宿主、分享界面、输入、云端、凭据、资源和自测
+Sources/          生产宿主、分享界面、输入、云端、凭据、资源
 Resources/        Safari 页面预处理 JavaScript
 Configuration/    宿主／扩展 plist 和沙盒 entitlement
 scripts/          仅本工程的构建与隔离验证
 tests/fixtures/   无私人资料的合成网页
+tests/runner/     不随安装包分发的自测入口与捕获/界面工具
 docs/             拆分来源、待办、验证与历史参考
 ```
 

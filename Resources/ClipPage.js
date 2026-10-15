@@ -5,7 +5,7 @@ var ExtensionPreprocessingJS = {
     var resources = [], warnings = 0, formulaCount = 0;
     var properties = ['color', 'background-color', 'font-family', 'font-size', 'font-weight', 'font-style',
       'line-height', 'text-align', 'text-decoration', 'white-space', 'vertical-align',
-      'margin-top', 'margin-bottom', 'padding', 'border-color', 'border-width', 'border-style', 'border-collapse'];
+      'margin-top', 'margin-bottom', 'padding', 'border-color', 'border-width', 'border-style', 'border-collapse', 'list-style-type'];
     var htmlTags = new Set(('p div span article section main aside header footer h1 h2 h3 h4 h5 h6 a img br hr wbr strong b em i u s small sub sup pre code blockquote ul ol li dl dt dd table thead tbody tfoot tr td th caption colgroup col figure figcaption details summary').split(' '));
     var mathTags = new Set(('math mi mn mo mrow mfrac msqrt mroot msub msup msubsup mtext mover munder munderover mtable mtr mtd semantics annotation mstyle mpadded mspace menclose mfenced mmultiscripts mprescripts none maligngroup malignmark').split(' '));
     // Prefer an explicit article container, never the first paragraph/article of
@@ -15,6 +15,12 @@ var ExtensionPreprocessingJS = {
         || document.querySelector('#mw-content-text')
         || (document.body && document.body.matches('.mw-parser-output') ? document.body : null);
       if (wiki && (wiki.textContent.trim() || wiki.querySelector('img,math'))) return {node: wiki, wiki: true};
+      // esoTalk (including Chaoli): keep the loaded conversation, not just its
+      // first post, but exclude the surrounding page shell and scrubber.
+      var forum = document.querySelector('#conversation');
+      if (forum && forum.querySelector('#conversationTitle') && forum.querySelector('#conversationPosts.postList .post .postBody')) {
+        return {node: forum, wiki: false, forum: true};
+      }
       var mains = Array.from(document.querySelectorAll('main,[role="main"]')).filter(function (item) {
         return !item.parentElement.closest('main,[role="main"]') && (item.textContent.trim() || item.querySelector('img,math'));
       });
@@ -69,13 +75,46 @@ var ExtensionPreprocessingJS = {
         // References, notes, infoboxes, tables, figures and section anchors are
         // article content; do not blanket-delete aside/header/footer or lists.
       }
+      if (articleMode === 'forum') {
+        copy.querySelectorAll('.scrubberColumn,#conversationReply,.timeMarker').forEach(function (item) { item.remove(); });
+        var header = copy.querySelector('#conversationHeader');
+        if (header) Array.from(header.children).forEach(function (item) { if (item.id !== 'conversationTitle') item.remove(); });
+        copy.querySelectorAll('#conversationPosts .post').forEach(function (post) {
+          // Only remove forum-owned direct children. Never strip a quoted
+          // header/footer, list, figure or signature-looking class in the body.
+          Array.from(post.children).forEach(function (item) { if (item.classList.contains('avatar')) item.remove(); });
+          var content = Array.from(post.children).find(function (item) { return item.classList.contains('postContent'); });
+          if (!content) return;
+          Array.from(content.children).forEach(function (item) { if (item.classList.contains('postFooter')) item.remove(); });
+          var heading = content.querySelector('.postHeader');
+          if (heading) {
+            heading.querySelectorAll('.controls,.group').forEach(function (item) { item.remove(); });
+            heading.querySelectorAll('h3').forEach(function (item) { item.style.fontSize = '14px'; item.style.margin = '0 0 4px'; });
+          }
+        });
+        copy.querySelectorAll('#conversationHeader,#conversationBody,#conversationPosts,#conversationPosts > li,#conversationPosts .post,#conversationPosts .postContent,#conversationPosts .postHeader,#conversationPosts .postHeader .info,#conversationPosts .postBody').forEach(function (item) {
+          item.style.margin = '0'; item.style.padding = '0'; item.style.borderWidth = '0';
+        });
+        var posts = copy.querySelector('#conversationPosts');
+        if (posts) posts.style.listStyleType = 'none';
+        copy.querySelectorAll('#conversationPosts > li').forEach(function (item) {
+          item.style.listStyleType = 'none'; item.style.marginTop = '16px'; item.style.padding = '0 0 16px';
+          item.style.borderWidth = '0 0 1px'; item.style.borderStyle = 'solid'; item.style.borderColor = '#d7dbdf';
+        });
+      }
       // A detached selection is not a page canvas. Importing the body colour
       // here paints the selected fragment as a large highlighted rectangle.
-      var backdrop = articleMode === 'selection' ? null : document.body;
+      var backdrop = articleMode === 'selection' ? null : document.body, opaqueBackdrop = false;
       while (backdrop) {
         var color = window.getComputedStyle(backdrop).backgroundColor;
-        if (color && color !== 'transparent' && !/rgba\([^)]*,\s*0\s*\)$/.test(color)) { copy.style.backgroundColor = color; break; }
+        if (color && color !== 'transparent' && !/rgba\([^)]*,\s*0\s*\)$/.test(color)) { copy.style.backgroundColor = color; opaqueBackdrop = true; break; }
         backdrop = backdrop.parentElement;
+      }
+      if (articleMode && articleMode !== 'selection' && !opaqueBackdrop) {
+        // A color-scheme:dark page can have transparent HTML/body on a dark
+        // system Canvas. That implicit canvas is lost in a light note viewer.
+        var foreground = copy.style.color.match(/^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+        copy.style.backgroundColor = foreground && Math.min(+foreground[1], +foreground[2], +foreground[3]) > 200 ? '#18191b' : '#fff';
       }
       // Wikipedia supplies both accessibility MathML and fallback images in the
       // same element. Keep one semantic formula, not MathML plus a failed image.
@@ -179,7 +218,7 @@ var ExtensionPreprocessingJS = {
       var selection = window.getSelection(), selected = document.createElement('div');
       if (selection) for (var i = 0; i < selection.rangeCount; i++) selected.appendChild(selection.getRangeAt(i).cloneContents());
       var root = contentRoot();
-      var page = root.node ? snapshot(root.node, root.wiki ? 'wiki' : 'article') : '';
+      var page = root.node ? snapshot(root.node, root.wiki ? 'wiki' : root.forum ? 'forum' : 'article') : '';
       if (root.wiki && page) {
         // Keep provenance/license text compactly rather than copying all site
         // footer menus, badges, last-edit controls and their computed spacing.

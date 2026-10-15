@@ -22,8 +22,8 @@ precondition(hostIcon != nil && extensionIcon != nil, "Both host and extension m
 let hostBytes = try Data(contentsOf: hostIcon!), extensionBytes = try Data(contentsOf: extensionIcon!)
 precondition(!hostBytes.isEmpty && !extensionBytes.isEmpty)
 print("PASS host and macOS share extension both declare existing icon resources")
-precondition(hostBytes == extensionBytes, "Host and extension icons must match")
-print("PASS host and share extension icon bytes match")
+precondition(extensionBytes.count < 150000, "Share-menu icon should not duplicate large native assets")
+print("PASS share extension carries only a compact static menu icon")
 for (label, url) in [("host", hostIcon!), ("share extension", extensionIcon!)] {
     guard let source = CGImageSourceCreateWithURL(url as CFURL, nil), let nsImage = NSImage(contentsOf: url) else {
         fatalError("Icon cannot be decoded")
@@ -46,9 +46,9 @@ let extName = try metadata(ext)["CFBundleIconName"] as? String
 let hostCar = host.appendingPathComponent("Contents/Resources/Assets.car")
 let extCar = ext.appendingPathComponent("Contents/Resources/Assets.car")
 if hostName != nil || extName != nil || FileManager.default.fileExists(atPath: hostCar.path) || FileManager.default.fileExists(atPath: extCar.path) {
-    precondition(hostName == "AppIcon" && hostName == extName, "Native icon names must match in both bundles")
-    print("PASS host and share extension both select the native AppIcon catalog")
-    let a = try Data(contentsOf: hostCar), b = try Data(contentsOf: extCar)
-    precondition(!a.isEmpty && a == b, "Both bundles must contain the same native catalog")
-    print("PASS matching nonempty native catalog resources in host and share extension")
+    precondition(hostName == "AppIcon" && extName == nil, "Native host and static share icon must use separate resolver paths")
+    print("PASS host retains native icon; sharing extension explicitly selects a static icon")
+    let a = try Data(contentsOf: hostCar)
+    precondition(!a.isEmpty && !FileManager.default.fileExists(atPath: extCar.path))
+    print("PASS native catalog packaged once, not duplicated in share extension")
 }

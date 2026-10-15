@@ -171,7 +171,7 @@ func sessionClipperSelfTest() -> Int32 {
 private final class CaptureTestRunner: NSObject, WKNavigationDelegate {
     var done = false, code: Int32 = 1
     var contentCases: String?
-    var publicWiki = false, rendering = false
+    var publicWiki = false, publicForum = false, rendering = false
     let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 900, height: 600), configuration: WKWebViewConfiguration())
     override init() { super.init(); web.navigationDelegate = self }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
@@ -187,6 +187,27 @@ private final class CaptureTestRunner: NSObject, WKNavigationDelegate {
         web.evaluateJavaScript(js + "\nvar captured; ExtensionPreprocessingJS.run({completionFunction:function(x){captured=x}}); captured;") { result, error in
             guard error == nil, let data = result as? [String: Any], let html = data["pageHTML"] as? String else {
                 print("FAIL WebKit snapshot: \(error?.localizedDescription ?? "no HTML")"); self.done = true; return
+            }
+            if self.publicForum {
+                let checks: [(String, Bool)] = [
+                    ("public esoTalk title and all four loaded posts retained", html.contains("conversationTitle") && ["p103809", "p103810", "p103811", "p103832"].allSatisfy { html.contains($0) }),
+                    ("public esoTalk post opening and final reply retained", html.contains("群里看到的数论难题") && html.contains("验证代码")),
+                    ("public esoTalk sidebar search channels and footer excluded", !html.contains("scrubberColumn") && !html.contains("只看楼主") && !html.contains("友情链接") && !html.contains("Powered by")),
+                    ("public esoTalk avatars signatures and reply login removed", !html.contains("uploads/avatars") && !html.contains("Glory's") && !html.contains("后才能发言")),
+                    ("public esoTalk ten semantic formulas retained once", html.components(separatedBy: "<math").count - 1 == 10 && !html.contains("<mjx-container")),
+                    ("public esoTalk code blocks and cross-site article link retained", html.contains("factorial_mod_prime") && html.contains("https://zenodo.org/records/23119159")),
+                    ("public esoTalk no hidden controls or active scripting", !html.contains("<script") && !html.contains("<input") && !html.contains("onclick=")),
+                    ("public esoTalk no avatar downloads", !(data["resources"] as? [String] ?? []).contains(where: { $0.contains("/avatars/") }))]
+                for (name, ok) in checks { print("\(ok ? "PASS" : "FAIL") \(name)") }
+                self.code = checks.allSatisfy({ $0.1 }) ? 0 : 1
+                print("Public esoTalk local replay checks: \(checks.count), failures: \(checks.filter({ !$0.1 }).count). Network blocked.")
+                if let path = ProcessInfo.processInfo.environment["WIZNOTE_CLIPPER_TEST_ARTIFACT_DIR"], path.hasPrefix("/") {
+                    try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+                    try? html.write(toFile: path + "/forum-captured.html", atomically: true, encoding: .utf8)
+                    self.rendering = true
+                    self.web.loadHTMLString("<!doctype html><meta charset='utf-8'><body style='margin:24px;font:16px/1.55 system-ui'>" + html, baseURL: nil)
+                } else { self.done = true }
+                return
             }
             if self.publicWiki {
                 let checks: [(String, Bool)] = [
@@ -249,12 +270,12 @@ private final class CaptureTestRunner: NSObject, WKNavigationDelegate {
         guard let path = ProcessInfo.processInfo.environment["WIZNOTE_CLIPPER_TEST_ARTIFACT_DIR"] else { done = true; return }
         web.takeSnapshot(with: nil) { image, error in
             if let image, let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff), let png = bitmap.representation(using: .png, properties: [:]) {
-                try? png.write(to: URL(fileURLWithPath: path + "/wiki-top.png"))
+                try? png.write(to: URL(fileURLWithPath: path + (self.publicForum ? "/forum-top.png" : "/wiki-top.png")))
             } else { self.code = 1; print("FAIL Wikipedia top render") }
             self.web.evaluateJavaScript("window.scrollTo(0, document.documentElement.scrollHeight)") { _, _ in
                 self.web.takeSnapshot(with: nil) { image, error in
                     if let image, let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff), let png = bitmap.representation(using: .png, properties: [:]) {
-                        try? png.write(to: URL(fileURLWithPath: path + "/wiki-bottom.png"))
+                        try? png.write(to: URL(fileURLWithPath: path + (self.publicForum ? "/forum-bottom.png" : "/wiki-bottom.png")))
                     } else { self.code = 1; print("FAIL Wikipedia bottom render") }
                     self.done = true
                 }
@@ -262,14 +283,15 @@ private final class CaptureTestRunner: NSObject, WKNavigationDelegate {
         }
     }
 }
-func captureClipperSelfTest(fixture: String, publicWiki: Bool = false) -> Int32 {
+func captureClipperSelfTest(fixture: String, publicWiki: Bool = false, publicForum: Bool = false) -> Int32 {
     // Only local named synthetic fixture; no credentials and no production endpoint.
-    guard fixture.hasPrefix("/"), fixture.hasSuffix(publicWiki ? "/wiki-public-original.html" : "/clipper-cloud-page.html"),
+    guard fixture.hasPrefix("/"), fixture.hasSuffix(publicWiki ? "/wiki-public-original.html" : publicForum ? "/chaoli-12353-original.html" : "/clipper-cloud-page.html"),
           let html = try? String(contentsOfFile: fixture, encoding: .utf8) else { return 2 }
     let app = NSApplication.shared; app.setActivationPolicy(.accessory); app.finishLaunching()
     let runner = CaptureTestRunner()
     runner.publicWiki = publicWiki
-    if !publicWiki { runner.contentCases = try? String(contentsOf: URL(fileURLWithPath: fixture).deletingLastPathComponent().appendingPathComponent("clipper-content-cases.js"), encoding: .utf8) }
+    runner.publicForum = publicForum
+    if !publicWiki && !publicForum { runner.contentCases = try? String(contentsOf: URL(fileURLWithPath: fixture).deletingLastPathComponent().appendingPathComponent("clipper-content-cases.js"), encoding: .utf8) }
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
     window.title = "剪藏静态捕获合成测试"; window.contentView = runner.web; window.orderFront(nil)
     WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "synthetic-no-network",
