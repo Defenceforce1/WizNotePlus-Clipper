@@ -1,0 +1,30 @@
+name: Independent native clipper
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['Sources/**', 'Resources/**', 'Configuration/**', 'scripts/**', 'tests/**', 'LICENSE', 'licenses/**', '.github/workflows/clipper.yml']
+  pull_request:
+    paths: ['Sources/**', 'Resources/**', 'Configuration/**', 'scripts/**', 'tests/**', 'LICENSE', 'licenses/**', '.github/workflows/clipper.yml']
+permissions:
+  contents: read
+jobs:
+  clipper:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build only the standalone clipper and run synthetic checks
+        run: |
+          test "$(uname -m)" = arm64
+          bash scripts/build.sh "$RUNNER_TEMP/wiznote-clipper"
+          bash scripts/test.sh "$RUNNER_TEMP/wiznote-clipper/WizNotePlus Web Clipper.app"
+      - name: Archive corresponding source and test-only app
+        run: |
+          git archive --format=tar.gz --output="$RUNNER_TEMP/WizNotePlus-Clipper-source.tar.gz" HEAD
+          ditto -c -k --keepParent "$RUNNER_TEMP/wiznote-clipper/WizNotePlus Web Clipper.app" "$RUNNER_TEMP/WizNotePlus-Clipper-adhoc-test.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WizNotePlus-Clipper-adhoc-test-only
+          path: |
+            ${{ runner.temp }}/WizNotePlus-Clipper-adhoc-test.zip
+            ${{ runner.temp }}/WizNotePlus-Clipper-source.tar.gz
