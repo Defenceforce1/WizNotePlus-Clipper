@@ -52,33 +52,9 @@ if CommandLine.arguments.count > 1 {
     fputs("Unknown test option; normal startup refused.\n", stderr); exit(2)
 }
 
-final class ClipperHost: NSObject, NSApplicationDelegate {
-    static let webVersionURL = ClipperLinks.webVersionURL
-    var window: NSWindow?
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        window = makeWindow(); window?.center(); window?.makeKeyAndOrderFront(nil)
-        let menu = NSMenu(); let root = NSMenuItem(); menu.addItem(root)
-        let appMenu = NSMenu(); appMenu.addItem(withTitle: "退出网页剪藏", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        root.submenu = appMenu; NSApp.mainMenu = menu
-    }
-    func makeWindow() -> NSWindow {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 570, height: 350),
-            styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
-        window.title = "WizNotePlus 网页剪藏"
-        let text = NSTextField(wrappingLabelWithString:
-            "WizNotePlus 网页剪藏 0.3.3\n\n在 Safari 中打开网页，点击“分享 → WizNotePlus 网页剪藏”。\n\n登录为知账号，选择文件夹，即可保存正文或选中内容。\n支持保留图片和静态公式，无需运行主 App。\n\n上传需要联网；勾选“记住密码”后，下次可继续使用。")
-        text.frame = NSRect(x: 24, y: 76, width: 520, height: 250); window.contentView?.addSubview(text)
-        let web = NSButton(title: "打开网页版", target: self, action: #selector(openWebVersion(_:)))
-        web.bezelStyle = .rounded; web.frame = NSRect(x: 24, y: 22, width: 126, height: 32)
-        window.contentView?.addSubview(web)
-        return window
-    }
-    @objc func openWebVersion(_ sender: Any?) {
-        NSWorkspace.shared.open(Self.webVersionURL)
-    }
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+enum ClipperHost {
+    // Retained as the signed containing app for the Safari share extension.
+    // Normal launch creates no UI, touches no credentials and exits immediately.
+    static func run() -> Int32 { 0 }
 }
-let application = NSApplication.shared
-application.setActivationPolicy(.regular)
-let delegate = ClipperHost(); application.delegate = delegate
-application.run()
+exit(ClipperHost.run())

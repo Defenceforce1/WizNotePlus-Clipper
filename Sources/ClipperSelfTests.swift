@@ -337,13 +337,18 @@ func submissionClipperSelfTest() -> Int32 {
 
 func shareUIClipperSelfTest() -> Int32 {
     let app = NSApplication.shared; app.setActivationPolicy(.accessory); app.finishLaunching()
-    let controller = ShareViewController(); let root = controller.view
+    let screenshotAccount = try! CloudClipAccount(["token": "synthetic-only-token", "kbGuid": "00000000-0000-0000-0000-000000000001", "userGuid": "00000000-0000-0000-0000-000000000002", "userID": "synthetic@example.invalid"])
+    let screenshotInput = try! ClipInput(dictionary: ["url": "https://example.invalid/page", "title": "Homogeneous polynomial — 示例", "pageHTML": "<p>body</p>"])
+    let memoryOnly = ClipLoginStorage(loadSecret: { _ in nil }, saveAccount: { _ in true }, saveSecret: { _ in true }, forget: {})
+    let screenshotClient = CloudClipClient(transport: { _, callback in callback(.success(["code": 200, "result": ["/网页剪藏/"]])) })
+    let controller = ShareViewController(cloud: screenshotClient, credentials: memoryOnly, onAcceptedShare: {})
+    let root = controller.view
     func descendants(_ view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants($0) } }
     let views = descendants(root), buttons = views.compactMap { $0 as? NSButton }.filter { !($0 is NSPopUpButton) }
     let text = views.compactMap { ($0 as? NSTextField)?.stringValue }.joined(separator: "\n")
     let segments = views.compactMap { $0 as? NSSegmentedControl }
     let checks: [(String, Bool)] = [
-        ("compact 460 by 340 native form", controller.preferredContentSize == NSSize(width: 460, height: 340)),
+        ("compact 460 by 300 native form", controller.preferredContentSize == NSSize(width: 460, height: 300)),
         ("no local destination or pairing fields", segments.count == 1 && !views.contains(where: { $0 is NSSecureTextField }) && !text.contains("本机客户端")),
         ("no summary or preview widgets", !views.contains(where: { $0 is NSTextView || $0 is WKWebView || $0 is NSScrollView }) && !buttons.contains(where: { $0.title.contains("预览") })),
         ("native cloud login upload cancel and web controls remain", Set(buttons.map { $0.title }) == Set(["登录账号", "上传", "取消", "为知笔记网页版"])),
@@ -354,6 +359,7 @@ func shareUIClipperSelfTest() -> Int32 {
     for (name, ok) in checks { print("\(ok ? "PASS" : "FAIL") \(name)") }
     let window = NSWindow(contentRect: root.bounds, styleMask: [.titled], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false; window.title = "剪藏界面合成测试"; window.contentViewController = controller; window.orderFront(nil)
+    controller.configureShare(input: screenshotInput, account: screenshotAccount)
     if let path = ProcessInfo.processInfo.environment["WIZNOTE_CLIPPER_TEST_ARTIFACT_DIR"], path.hasPrefix("/") {
         try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {
@@ -397,11 +403,9 @@ func shareUIClipperSelfTest() -> Int32 {
     upload.performClick(nil)
     check(finished == 1 && uploads.count == 1, "repeated completion action cannot upload or finish twice")
     editorWindow.close()
-    let host = ClipperHost(); let hostWindow = host.makeWindow(); hostWindow.isReleasedWhenClosed = false
-    let hostButtons = descendants(hostWindow.contentView!).compactMap { $0 as? NSButton }
-    let web = hostButtons.first(where: { $0.title == "打开网页版" })
-    check(web != nil && web?.action == #selector(ClipperHost.openWebVersion(_:)) && (web?.target as? ClipperHost) === host, "startup page has a wired open-web-version button")
-    check(ClipperHost.webVersionURL.absoluteString == "https://www.wiz.cn/xapp" && ClipperHost.webVersionURL.query == nil, "web button uses the requested official HTTPS URL without account tokens")
+    let windowsBeforeLaunch = app.windows.count
+    check(ClipperHost.run() == 0 && app.windows.count == windowsBeforeLaunch, "containing app normal launch exits without creating any window")
+    check(ClipperLinks.webVersionURL.absoluteString == "https://www.wiz.cn/xapp" && ClipperLinks.webVersionURL.query == nil, "share web button keeps the requested official HTTPS URL without tokens")
     let shareWeb = buttons.first(where: { $0.title == "为知笔记网页版" })
     check(shareWeb?.action == #selector(ShareViewController.openWebVersion(_:)) && (shareWeb?.target as? ShareViewController) === controller, "share form web button is wired to the controller")
     check(shareWeb?.frame.minX == 24 && shareWeb!.frame.maxY < 42 && shareWeb!.frame.maxX < 254, "web button sits at lower left without overlapping upload or status")
@@ -412,7 +416,20 @@ func shareUIClipperSelfTest() -> Int32 {
     let otherForm = ClipLoginForm(userID: "other@example.invalid", secret: ClipLoginSecret(userID: "saved@example.invalid", password: "synthetic-not-real"))
     check(otherForm.password.stringValue.isEmpty, "mismatched account never receives saved password")
     check(!text.contains("API") && !text.contains("未公证") && !text.contains("无需打开主 App"), "share form removes redundant implementation notices")
-    hostWindow.close()
+    let heading = views.compactMap { $0 as? NSTextField }.first(where: { $0.stringValue == "添加到为知笔记" })
+    check(heading != nil && heading?.alignment == .center && heading?.font?.pointSize == 20
+        && NSFontManager.shared.traits(of: heading!.font!).contains(.boldFontMask), "single centered bold add-to-WizNote heading")
+    check(!text.contains("保存网页到为知笔记") && !text.contains("请选择文件夹") && !text.contains("上传到为知云端"), "subtitle and routine instruction copy are removed")
+    let readyStrings = descendants(root).compactMap { ($0 as? NSTextField)?.stringValue }
+    check(readyStrings.contains(screenshotAccount.userID) && !readyStrings.contains(where: { $0.contains("请选择") || $0.contains("正在") }), "ready share keeps the account but no routine status prompt")
+    check(Bundle.main.object(forInfoDictionaryKey: "LSUIElement") as? Bool == true, "containing app is configured without a normal Dock or menu-bar presence")
+    let failedClient = CloudClipClient(transport: { _, callback in callback(.success(["code": 301])) })
+    let failedView = ShareViewController(cloud: failedClient, credentials: memoryOnly, onAcceptedShare: {})
+    _ = failedView.view; failedView.configureShare(input: screenshotInput, account: screenshotAccount)
+    let failedViews = descendants(failedView.view)
+    check(failedViews.compactMap { ($0 as? NSTextField)?.stringValue }.contains(where: { $0.contains("301") }), "real API errors remain visible despite quiet idle state")
+    check(failedViews.compactMap { $0 as? NSButton }.contains(where: { $0.title == "切换账号" && $0.isEnabled })
+        && failedViews.compactMap { $0 as? NSButton }.contains(where: { $0.title == "上传" && !$0.isEnabled }), "failed authentication keeps in-share account controls and blocks upload")
     print("Share UI checks: \(checks.count + added), failures: \(failures). Synthetic account only; no keychain accessed.")
     return failures == 0 ? 0 : 1
 }

@@ -34,9 +34,9 @@ final class ClipLoginForm: NSView, NSTextFieldDelegate {
 
 @objc(WizNotePlusShareViewController)
 final class ShareViewController: NSViewController {
-    private let status = NSTextField(wrappingLabelWithString: "正在读取 Safari 分享内容…")
+    private let status = NSTextField(wrappingLabelWithString: "")
     private let titleField = NSTextField(string: "")
-    private let account = NSTextField(labelWithString: "未登录为知云端")
+    private let account = NSTextField(labelWithString: "未登录")
     private let folders = NSPopUpButton(frame: .zero, pullsDown: false)
     private let mode = NSSegmentedControl(labels: ["保存整页", "保存选中"], trackingMode: .selectOne, target: nil, action: nil)
     private let login = NSButton(title: "登录账号", target: nil, action: nil)
@@ -64,31 +64,28 @@ final class ShareViewController: NSViewController {
     }
 
     override func loadView() {
-        view = ClipperFormView(frame: NSRect(x: 0, y: 0, width: 460, height: 340))
+        view = ClipperFormView(frame: NSRect(x: 0, y: 0, width: 460, height: 300))
         preferredContentSize = view.frame.size
-        let heading = NSTextField(labelWithString: "网页剪藏")
-        heading.font = .boldSystemFont(ofSize: 17)
-        heading.frame = NSRect(x: 24, y: 298, width: 412, height: 24); view.addSubview(heading)
-        let subtitle = NSTextField(labelWithString: "保存网页到为知笔记")
-        subtitle.font = .systemFont(ofSize: 11); subtitle.textColor = .secondaryLabelColor
-        subtitle.frame = NSRect(x: 24, y: 275, width: 412, height: 18); view.addSubview(subtitle)
-        let card = NSBox(frame: NSRect(x: 20, y: 103, width: 420, height: 158))
+        let heading = NSTextField(labelWithString: "添加到为知笔记")
+        heading.font = .boldSystemFont(ofSize: 20); heading.alignment = .center
+        heading.frame = NSRect(x: 24, y: 248, width: 412, height: 28); view.addSubview(heading)
+        let card = NSBox(frame: NSRect(x: 20, y: 87, width: 420, height: 150))
         card.boxType = .custom; card.borderWidth = 0; card.cornerRadius = 10
         card.fillColor = .controlBackgroundColor; view.addSubview(card)
-        for (caption, y) in [("标题", 230.0), ("账号", 192.0), ("文件夹", 154.0), ("内容", 116.0)] {
+        for (caption, y) in [("标题", 208.0), ("账号", 172.0), ("文件夹", 136.0), ("内容", 100.0)] {
             let label = NSTextField(labelWithString: caption); label.alignment = .right
             label.textColor = .secondaryLabelColor; label.frame = NSRect(x: 28, y: y, width: 60, height: 20); view.addSubview(label)
         }
-        titleField.frame = NSRect(x: 102, y: 226, width: 326, height: 26)
+        titleField.frame = NSRect(x: 102, y: 204, width: 326, height: 26)
         titleField.placeholderString = "笔记标题"; titleField.isEnabled = false; view.addSubview(titleField)
-        account.frame = NSRect(x: 102, y: 190, width: 226, height: 22)
+        account.frame = NSRect(x: 102, y: 170, width: 226, height: 22)
         account.lineBreakMode = .byTruncatingMiddle; view.addSubview(account)
-        login.frame = NSRect(x: 334, y: 185, width: 94, height: 28)
+        login.frame = NSRect(x: 334, y: 165, width: 94, height: 28)
         login.bezelStyle = .rounded; login.target = self; login.action = #selector(loginCloud); view.addSubview(login)
-        folders.frame = NSRect(x: 102, y: 147, width: 326, height: 28); view.addSubview(folders)
-        mode.frame = NSRect(x: 102, y: 109, width: 326, height: 28); mode.selectedSegment = 0; view.addSubview(mode)
+        folders.frame = NSRect(x: 102, y: 129, width: 326, height: 28); view.addSubview(folders)
+        mode.frame = NSRect(x: 102, y: 93, width: 326, height: 28); mode.selectedSegment = 0; view.addSubview(mode)
         status.font = .systemFont(ofSize: 11); status.textColor = .secondaryLabelColor
-        status.frame = NSRect(x: 24, y: 42, width: 412, height: 49); view.addSubview(status)
+        status.frame = NSRect(x: 24, y: 43, width: 412, height: 40); view.addSubview(status)
         activity.style = .spinning; activity.isDisplayedWhenStopped = false
         activity.frame = NSRect(x: 188, y: 17, width: 16, height: 16); view.addSubview(activity)
         web.frame = NSRect(x: 24, y: 10, width: 145, height: 30); web.bezelStyle = .rounded
@@ -130,15 +127,15 @@ final class ShareViewController: NSViewController {
         mode.setEnabled(!input.pageHTML.isEmpty, forSegment: 0)
         mode.setEnabled(!input.selectionHTML.isEmpty, forSegment: 1)
         mode.selectedSegment = input.pageHTML.isEmpty ? 1 : 0
-        self.account.stringValue = account?.userID ?? "未登录为知云端"; self.account.toolTip = account?.userID
-        status.stringValue = account == nil ? "请先登录为知账号。" : "正在读取文件夹…"
+        self.account.stringValue = account?.userID ?? "未登录"; self.account.toolTip = account?.userID
+        status.stringValue = ""
         if account != nil { refreshCloudFolders() }
     }
 
     @objc private func loginCloud() {
         guard let window = view.window, submission.phase == .ready, !completed else { return }
         let alert = NSAlert(); alert.messageText = "登录为知笔记"
-        alert.informativeText = "登录后可直接剪藏。记住的密码仅保存在系统钥匙串中。"
+        alert.informativeText = ""
         alert.addButton(withTitle: "登录"); alert.addButton(withTitle: "取消")
         let stored = credentials.loadSecret(cloudAccount?.userID)
         let fields = ClipLoginForm(userID: cloudAccount?.userID ?? stored?.userID ?? "", secret: stored)
@@ -149,7 +146,7 @@ final class ShareViewController: NSViewController {
             if let window = fields.window, !window.makeFirstResponder(nil) {
                 password.stringValue = ""; self.status.stringValue = "请完成账号和密码输入后重新登录。"; return
             }
-            self.setEditing(false); self.activity.startAnimation(nil); self.status.stringValue = "正在登录…"
+            self.setEditing(false); self.activity.startAnimation(nil); self.status.stringValue = ""
             let secret = password.stringValue; password.stringValue = ""
             self.cloud.login(userID: user.stringValue.trimmingCharacters(in: .whitespacesAndNewlines), password: secret) { [weak self] result in
                 guard let self, !self.completed else { return }
@@ -177,7 +174,7 @@ final class ShareViewController: NSViewController {
                 self.cloudAccount = renewed
                 self.folders.removeAllItems(); self.folders.addItems(withTitles: items)
                 self.folders.selectItem(withTitle: "/网页剪藏/"); self.save.isEnabled = self.input != nil
-                self.status.stringValue = self.persistenceWarning ?? "请选择文件夹，然后上传。"
+                self.status.stringValue = self.persistenceWarning ?? ""
             case .failure(let error): self.save.isEnabled = false; self.status.stringValue = error.localizedDescription
             }
         }
@@ -199,12 +196,12 @@ final class ShareViewController: NSViewController {
             status.stringValue = "请先完成标题编辑，再上传。"; return
         }
         let title = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        setEditing(false); activity.startAnimation(nil); status.stringValue = "正在准备上传…"
+        setEditing(false); activity.startAnimation(nil); status.stringValue = ""
         submission.submit(account: account, input: input, title: title, folder: folder,
             selection: mode.selectedSegment == 1, progress: { [weak self] count, total in
-                guard let self, !self.completed else { return }; self.status.stringValue = "正在处理图片 \(count)/\(total)…"
+                guard let self, !self.completed else { return }; self.activity.toolTip = "图片 \(count)/\(total)"
             }, uploading: { [weak self] in
-                self?.status.stringValue = "正在上传到为知服务器…"
+                self?.activity.toolTip = "正在上传"
             }) { [weak self] outcome in
                 guard let self, !self.completed else { return }; self.activity.stopAnimation(nil)
                 switch outcome {
