@@ -25,14 +25,34 @@ cp "$project_dir/README.md" "$app/Contents/Resources/README.md"
 if [[ -d "$resource_dir/AppIcon.icon" ]]; then
     bash "$project_dir/scripts/compile-icon.sh" "$resource_dir/AppIcon.icon" "$output/CompiledIcon"
     cp "$output/CompiledIcon/Assets.car" "$app/Contents/Resources/Assets.car"
-    cp "$output/CompiledIcon/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
+    # New systems use the native catalog's ORIGINAL layers, not a glass PNG.
+    # The approved static A export is only a high-resolution legacy fallback.
+    if [[ -f "$resource_dir/AppIcon-final.icns" ]]; then
+        cp "$resource_dir/AppIcon-final.icns" "$app/Contents/Resources/AppIcon.icns"
+    else
+        cp "$output/CompiledIcon/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
+    fi
     /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string AppIcon' "$app/Contents/Info.plist"
     /usr/libexec/PlistBuddy -c 'Add :CFBundleIconName string AppIcon' "$app/Contents/Info.plist"
+elif [[ -f "$resource_dir/AppIcon-final.icns" ]]; then
+    cp "$resource_dir/AppIcon-final.icns" "$app/Contents/Resources/AppIcon.icns"
+    /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string AppIcon' "$app/Contents/Info.plist"
 elif [[ -f "$resource_dir/AppIcon.icns" ]]; then
     xcrun swift "$project_dir/scripts/prepare-icon.swift" "$resource_dir/AppIcon.icns" "$output/AppIcon.iconset"
     iconutil -c icns "$output/AppIcon.iconset" -o "$app/Contents/Resources/AppIcon.icns"
     /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string AppIcon' "$app/Contents/Info.plist"
 fi
+# macOS share extensions need their own icon resource/declaration. Do not rely
+# on iOS's automatic host-icon inheritance or on Finder custom-icon metadata.
+if [[ -f "$app/Contents/Resources/AppIcon.icns" ]]; then
+    cp "$app/Contents/Resources/AppIcon.icns" "$extension/Contents/Resources/AppIcon.icns"
+    /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string AppIcon' "$extension/Contents/Info.plist"
+    if [[ -f "$app/Contents/Resources/Assets.car" ]]; then
+        cp "$app/Contents/Resources/Assets.car" "$extension/Contents/Resources/Assets.car"
+        /usr/libexec/PlistBuddy -c 'Add :CFBundleIconName string AppIcon' "$extension/Contents/Info.plist"
+    fi
+fi
+xcrun swift "$project_dir/scripts/check-bundle-icons.swift" "$app"
 sdk=$(xcrun --sdk macosx --show-sdk-path)
 common=("$source_dir/ClipInput.swift" "$source_dir/ClipCredentialStore.swift" "$source_dir/CloudClipClient.swift" "$source_dir/ClipResources.swift" "$source_dir/CloudClipSubmission.swift")
 xcrun swiftc -sdk "$sdk" -target arm64-apple-macos14.0 -framework AppKit -framework Foundation -framework Security \
