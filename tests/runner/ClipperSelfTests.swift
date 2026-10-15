@@ -201,12 +201,7 @@ private final class CaptureTestRunner: NSObject, WKNavigationDelegate {
                 for (name, ok) in checks { print("\(ok ? "PASS" : "FAIL") \(name)") }
                 self.code = checks.allSatisfy({ $0.1 }) ? 0 : 1
                 print("Public esoTalk local replay checks: \(checks.count), failures: \(checks.filter({ !$0.1 }).count). Network blocked.")
-                if let path = ProcessInfo.processInfo.environment["WIZNOTE_CLIPPER_TEST_ARTIFACT_DIR"], path.hasPrefix("/") {
-                    try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
-                    try? html.write(toFile: path + "/forum-captured.html", atomically: true, encoding: .utf8)
-                    self.rendering = true
-                    self.web.loadHTMLString("<!doctype html><meta charset='utf-8'><body style='margin:24px;font:16px/1.55 system-ui'>" + html, baseURL: nil)
-                } else { self.done = true }
+                self.checkForumSelections(wholeHTML: html)
                 return
             }
             if self.publicWiki {
@@ -264,6 +259,47 @@ private final class CaptureTestRunner: NSObject, WKNavigationDelegate {
                 print("Content-boundary checks: \(checks.count), failures: \(failed)")
                 self.done = true
             }
+        }
+    }
+    func checkForumSelections(wholeHTML: String) {
+        let js = #"""
+        (function(){
+          var checks=[], r, selection=window.getSelection();
+          function check(name,ok){checks.push({name:name,ok:!!ok});}
+          var atom=document.querySelector('#conversationPosts .postBody .MathJax,#conversationPosts .postBody .MathJax_SVG,#conversationPosts .postBody mjx-container');
+          var walker=document.createTreeWalker(atom,NodeFilter.SHOW_TEXT), t;
+          while((t=walker.nextNode())) if(t.data.trim()&&!t.parentElement.closest('math,.MJX_Assistive_MathML,mjx-assistive-mml')) break;
+          selection.removeAllRanges(); var range=document.createRange(); range.setStart(t,0); range.setEnd(t,Math.min(1,t.length)); selection.addRange(range);
+          ExtensionPreprocessingJS.run({completionFunction:function(x){r=x;}});
+          var formula=r.selectionHTML, doc=new DOMParser().parseFromString(formula,'text/html');
+          check('public partial formula selection retains one complete semantic expression',doc.querySelectorAll('math').length===1&&!!doc.querySelector('msup'));
+          check('public partial formula selection excludes adjacent prose and renderer duplicates',!doc.querySelector('pre,svg')&&!formula.includes('postHeader')&&doc.querySelectorAll('.wiz-clip-formula').length===1);
+          var pre=Array.from(document.querySelectorAll('#conversationPosts .postBody pre')).pop(), expected=pre.textContent;
+          selection.removeAllRanges(); range=document.createRange(); range.selectNodeContents(pre); selection.addRange(range);
+          ExtensionPreprocessingJS.run({completionFunction:function(x){r=x;}});
+          doc=new DOMParser().parseFromString(r.selectionHTML,'text/html'); var code=doc.querySelector('pre');
+          check('public selected code preserves every newline tab and indentation',code&&code.textContent===expected);
+          check('public selected code has monospace type soft wrapping and stable tab stops',code&&code.style.fontFamily.includes('Menlo')&&code.style.whiteSpace==='pre-wrap'&&code.style.tabSize==='4');
+          check('public selected code excludes forum shell and unrelated replies',!r.selectionHTML.includes('postHeader')&&!r.selectionHTML.includes('scrubberColumn')&&!r.selectionHTML.includes('conversationReply')&&doc.querySelectorAll('pre').length===1);
+          selection.removeAllRanges(); return {checks:checks,preview:'<h2>选中公式</h2>'+formula+'<h2>选中代码</h2>'+r.selectionHTML};
+        }());
+        """#
+        web.evaluateJavaScript(js) { result, error in
+            guard error == nil, let value = result as? [String: Any], let checks = value["checks"] as? [[String: Any]], checks.count == 5 else {
+                print("FAIL public forum selection replay: \(error?.localizedDescription ?? "no result")"); self.code = 1; self.done = true; return
+            }
+            for item in checks {
+                let ok = item["ok"] as? Bool == true
+                print("\(ok ? "PASS" : "FAIL") \(item["name"] as? String ?? "selection check")")
+                if !ok { self.code = 1 }
+            }
+            if let path = ProcessInfo.processInfo.environment["WIZNOTE_CLIPPER_TEST_ARTIFACT_DIR"], path.hasPrefix("/"), let preview = value["preview"] as? String {
+                try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+                try? wholeHTML.write(toFile: path + "/forum-captured.html", atomically: true, encoding: .utf8)
+                try? preview.write(toFile: path + "/forum-selections.html", atomically: true, encoding: .utf8)
+                self.rendering = true
+                self.web.loadHTMLString("<!doctype html><meta charset='utf-8'><body style='margin:24px;font:16px/1.55 system-ui'>" + preview, baseURL: nil)
+            } else { self.done = true }
         }
     }
     func renderWikiArtifacts() {

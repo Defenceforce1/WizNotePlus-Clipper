@@ -5,7 +5,9 @@ var ExtensionPreprocessingJS = {
     var resources = [], warnings = 0, formulaCount = 0;
     var properties = ['color', 'background-color', 'font-family', 'font-size', 'font-weight', 'font-style',
       'line-height', 'text-align', 'text-decoration', 'white-space', 'vertical-align',
-      'margin-top', 'margin-bottom', 'padding', 'border-color', 'border-width', 'border-style', 'border-collapse', 'list-style-type'];
+      'margin-top', 'margin-bottom', 'padding', 'border-color', 'border-width', 'border-style', 'border-collapse', 'list-style-type',
+      'overflow-wrap', 'word-break', 'tab-size', 'overflow-x'];
+    var formulaRoots = '.mwe-math-element,.katex-display,.MathJax_Display,.MathJax_SVG_Display,mjx-container,.katex,.MathJax,.MathJax_SVG,math';
     var htmlTags = new Set(('p div span article section main aside header footer h1 h2 h3 h4 h5 h6 a img br hr wbr strong b em i u s small sub sup pre code blockquote ul ol li dl dt dd table thead tbody tfoot tr td th caption colgroup col figure figcaption details summary').split(' '));
     var mathTags = new Set(('math mi mn mo mrow mfrac msqrt mroot msub msup msubsup mtext mover munder munderover mtable mtr mtd semantics annotation mstyle mpadded mspace menclose mfenced mmultiscripts mprescripts none maligngroup malignmark').split(' '));
     // Prefer an explicit article container, never the first paragraph/article of
@@ -59,11 +61,54 @@ var ExtensionPreprocessingJS = {
       wrapper.setAttribute('class', 'wiz-clip-formula'); wrapper.appendChild(visible);
       root.replaceWith(wrapper); formulaCount++; return true;
     }
-    function snapshot(node, articleMode) {
+    function selectedFragment(selection) {
+      var fragment = document.createElement('div'), sources = new WeakMap(), visited = 0;
+      function copyTree(original) {
+        if (++visited > 100000) throw new Error('Selection too complex');
+        var copy = original.cloneNode(false); sources.set(copy, original);
+        Array.from(original.childNodes).forEach(function (child) { copy.appendChild(copyTree(child)); });
+        return copy;
+      }
+      function select(original, range) {
+        if (++visited > 100000) throw new Error('Selection too complex');
+        if (!range.intersectsNode(original)) return null;
+        if (original.nodeType === Node.TEXT_NODE) {
+          var start = range.startContainer === original ? range.startOffset : 0;
+          var end = range.endContainer === original ? range.endOffset : original.length;
+          return end > start ? document.createTextNode(original.data.slice(start, end)) : null;
+        }
+        if (original.nodeType !== Node.ELEMENT_NODE) return null;
+        // A formula is atomic: selecting its visible numerator must not lose
+        // a denominator or the hidden accessibility MathML beside the glyphs.
+        if (original.matches(formulaRoots)) return copyTree(original);
+        var copy = original.cloneNode(false); sources.set(copy, original);
+        Array.from(original.childNodes).forEach(function (child) {
+          var chosen = select(child, range); if (chosen) copy.appendChild(chosen);
+        });
+        return copy.childNodes.length || original.matches('img,br,hr') ? copy : null;
+      }
+      if (selection) for (var i = 0; i < selection.rangeCount; i++) {
+        var range = selection.getRangeAt(i); if (range.collapsed) continue;
+        var root = range.commonAncestorContainer;
+        if (root.nodeType !== Node.ELEMENT_NODE) root = root.parentElement || document.body;
+        var formula = root.closest(formulaRoots);
+        if (formula) {
+          var parentFormula;
+          while (formula.parentElement && (parentFormula = formula.parentElement.closest(formulaRoots))) formula = parentFormula;
+          root = formula;
+        } else root = root.closest('pre') || root.closest('code') || root;
+        var chosen = select(root, range); if (chosen) fragment.appendChild(chosen);
+      }
+      return {node: fragment, sources: sources};
+    }
+    function snapshot(node, articleMode, sourceMap) {
       var copy = node.cloneNode(true), originals = Array.from(node.querySelectorAll('*')),
         clones = Array.from(copy.querySelectorAll('*')), originalNodes = new WeakMap(), embedded = 0;
       if (clones.length > 100000) throw new Error('Page too complex');
-      clones.forEach(function (item, i) { originalNodes.set(item, originals[i]); inlineStyle(item, originals[i]); });
+      clones.forEach(function (item, i) {
+        var original = sourceMap ? sourceMap.get(originals[i]) : originals[i];
+        originalNodes.set(item, original); inlineStyle(item, original);
+      });
       inlineStyle(copy, node.isConnected ? node : document.body);
       if (articleMode) {
         // Computed padding/margins belong to the website's surrounding layout,
@@ -118,7 +163,6 @@ var ExtensionPreprocessingJS = {
       }
       // Wikipedia supplies both accessibility MathML and fallback images in the
       // same element. Keep one semantic formula, not MathML plus a failed image.
-      var formulaRoots = '.mwe-math-element,.katex-display,.MathJax_Display,.MathJax_SVG_Display,mjx-container,.katex,.MathJax,.MathJax_SVG';
       copy.querySelectorAll('.MathJax_Preview').forEach(function (item) {
         var sibling = item.nextElementSibling;
         if (sibling && sibling.matches(formulaRoots)) item.remove();
@@ -131,6 +175,27 @@ var ExtensionPreprocessingJS = {
       });
       copy.querySelectorAll('math').forEach(function (item) {
         if (!item.closest('.wiz-clip-formula')) normalizeMath(item, originalNodes.get(item));
+      });
+      copy.querySelectorAll('pre,code').forEach(function (item) {
+        item.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+        item.style.fontWeight = '400'; item.style.lineHeight = '1.5'; item.style.tabSize = '4';
+        if (item.localName === 'pre') {
+          item.style.whiteSpace = 'pre-wrap'; item.style.overflowWrap = 'anywhere'; item.style.wordBreak = 'normal';
+          item.style.padding = '12px'; item.style.fontSize = '13px';
+          var foreground = item.style.color.match(/^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+          if (!item.style.backgroundColor || item.style.backgroundColor === 'rgba(0, 0, 0, 0)') {
+            item.style.backgroundColor = foreground && Math.min(+foreground[1], +foreground[2], +foreground[3]) > 200 ? '#1e1f22' : '#f5f6f8';
+          }
+        } else if (item.closest('pre')) {
+          item.style.whiteSpace = 'inherit'; item.style.fontSize = 'inherit'; item.style.backgroundColor = 'transparent';
+        } else {
+          item.style.whiteSpace = 'break-spaces';
+          if (articleMode === 'selection') item.style.color = 'inherit';
+        }
+        item.querySelectorAll('*').forEach(function (token) {
+          token.style.fontFamily = 'inherit'; token.style.fontSize = 'inherit'; token.style.lineHeight = 'inherit';
+          token.style.whiteSpace = 'inherit'; token.style.fontWeight = 'inherit';
+        });
       });
       copy.querySelectorAll('script,style,iframe,object,embed,input,button,select,textarea,template,link,meta,base').forEach(function (item) { item.remove(); });
       var walker = document.createTreeWalker(copy, NodeFilter.SHOW_COMMENT), comments = [];
@@ -215,8 +280,7 @@ var ExtensionPreprocessingJS = {
       wrapper.innerHTML = copy.innerHTML; return wrapper.outerHTML;
     }
     try {
-      var selection = window.getSelection(), selected = document.createElement('div');
-      if (selection) for (var i = 0; i < selection.rangeCount; i++) selected.appendChild(selection.getRangeAt(i).cloneContents());
+      var selection = window.getSelection(), selected = selectedFragment(selection);
       var root = contentRoot();
       var page = root.node ? snapshot(root.node, root.wiki ? 'wiki' : root.forum ? 'forum' : 'article') : '';
       if (root.wiki && page) {
@@ -233,7 +297,7 @@ var ExtensionPreprocessingJS = {
         }
         page += source.outerHTML;
       }
-      var chosen = selected.childNodes.length ? snapshot(selected, 'selection') : '';
+      var chosen = selected.node.childNodes.length ? snapshot(selected.node, 'selection', selected.sources) : '';
       if (new Blob([page]).size > 8 * 1024 * 1024) page = '';
       if (new Blob([chosen]).size > 8 * 1024 * 1024) chosen = '';
       args.completionFunction({title: document.title, url: location.href, pageHTML: page, selectionHTML: chosen, resources: resources,
