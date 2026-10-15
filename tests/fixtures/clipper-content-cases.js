@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Synthetic structures only. No copied article, network, account or storage.
+(function () {
+  var checks = [];
+  function check(name, ok) { checks.push({name: name, ok: !!ok}); }
+  function capture(html) {
+    window.getSelection().removeAllRanges(); document.body.className = '';
+    document.body.innerHTML = html;
+    var result; ExtensionPreprocessingJS.run({completionFunction: function (x) { result = x; }});
+    return result;
+  }
+  var r = capture('<header>site-header-marker</header><aside>sidebar-marker<img src="https://example.invalid/sidebar.png"></aside><main><div id="mw-content-text"><div class="mw-parser-output" style="margin-top:500px;padding:300px"><p>article-marker<a href="#cite_note-1">[1]</a></p><span class="mwe-math-element"><math><msup><mi>x</mi><mn>2</mn></msup></math><img src="https://example.invalid/duplicate.svg"></span><figure><img src="https://example.invalid/article.png"><figcaption>figure-marker</figcaption></figure><table><tr><td>table-marker</td></tr></table><section><h2>References</h2><ol class="references"><li id="cite_note-1">reference-marker</li></ol></section><aside>article-aside-marker</aside><span class="mw-editsection">edit-controls-marker</span><div class="navbox">related-menu-marker</div></div></div></main><footer id="footer"><ul><li id="footer-info-copyright">license-marker <a href="https://example.invalid/license">license-link-marker</a></li><li>footer-menu-marker<img src="https://example.invalid/badge.png"></li></ul></footer>');
+  var h = r.pageHTML, doc = new DOMParser().parseFromString(h, 'text/html');
+  check('Wikipedia site header and sidebar excluded', !h.includes('site-header-marker') && !h.includes('sidebar-marker'));
+  check('Wikipedia site footer menus and badges excluded', !h.includes('footer-menu-marker') && !h.includes('badge.png'));
+  check('Wikipedia section edit and related navigation excluded', !h.includes('edit-controls-marker') && !h.includes('related-menu-marker'));
+  check('article first paragraph preserved', h.includes('article-marker'));
+  check('references and target IDs preserved', !!doc.getElementById('cite_note-1') && h.includes('reference-marker'));
+  check('article figures captions and tables preserved', h.includes('figure-marker') && h.includes('table-marker'));
+  check('semantic formula kept once without fallback image', doc.querySelectorAll('math').length === 1 && !h.includes('duplicate.svg'));
+  check('article aside is not mistaken for site sidebar', h.includes('article-aside-marker'));
+  check('license text and link retained compactly', h.includes('license-marker') && h.includes('https://example.invalid/license'));
+  check('site wrapper whitespace not copied', !h.includes('500px') && !h.includes('300px'));
+  check('only article images enter download manifest', JSON.stringify(r.resources) === JSON.stringify(['https://example.invalid/article.png']));
+  var aside = document.querySelector('aside'), range = document.createRange(); range.selectNodeContents(aside);
+  window.getSelection().addRange(range);
+  ExtensionPreprocessingJS.run({completionFunction: function (x) { r = x; }});
+  check('explicit user selection outside article is preserved', r.selectionHTML.includes('sidebar-marker') && !r.selectionHTML.includes('article-marker'));
+  check('selected mode does not acquire article or footer content', !r.selectionHTML.includes('license-marker') && !r.selectionHTML.includes('reference-marker'));
+  r = capture('<p id="mw-content-text"></p><p>empty-container-fallback-marker</p>');
+  check('empty article container safely falls back to body', r.pageHTML.includes('empty-container-fallback-marker'));
+  r = capture('<p>body-fallback-first</p><article>multiple-article-first</article><article>multiple-article-last</article><p>body-fallback-last</p>');
+  check('unrecognized page keeps all body content', r.pageHTML.includes('body-fallback-first') && r.pageHTML.includes('body-fallback-last'));
+  check('multiple article elements are not reduced to the first', r.pageHTML.includes('multiple-article-first') && r.pageHTML.includes('multiple-article-last'));
+  r = capture('<aside>outside-main-marker</aside><main><article>main-first-marker</article><article>main-last-marker</article><footer>article-credit-marker</footer></main><footer>outside-footer-marker</footer>');
+  check('single semantic main excludes surrounding site shell', !r.pageHTML.includes('outside-main-marker') && !r.pageHTML.includes('outside-footer-marker'));
+  check('all articles and article credits within main remain', r.pageHTML.includes('main-first-marker') && r.pageHTML.includes('main-last-marker') && r.pageHTML.includes('article-credit-marker'));
+  r = capture('<div id="mw-content-text"><p>legacy-wiki-marker</p><ol><li>legacy-reference-marker</li></ol></div><footer>legacy-footer-marker</footer>');
+  check('legacy Wikipedia content container supported', r.pageHTML.includes('legacy-wiki-marker') && r.pageHTML.includes('legacy-reference-marker') && !r.pageHTML.includes('legacy-footer-marker'));
+  capture('<section><p>parsoid-body-marker</p><math><mi>z</mi></math></section>'); document.body.className = 'mw-parser-output';
+  ExtensionPreprocessingJS.run({completionFunction: function (x) { r = x; }});
+  check('standalone Parsoid body retains article and formula', r.pageHTML.includes('parsoid-body-marker') && r.pageHTML.includes('<mi>z</mi>'));
+  r = capture('<div id="mw-content-text"><div class="mw-parser-output"><table class="ambox"><tr><td class="mbox-image"><img src="https://example.invalid/decorative.svg"></td><td>notice-text-marker</td></tr></table><p>body-marker</p><div class="navbox-styles"><div class="navbox">nested-menu-marker</div></div></div></div>');
+  check('navigation style wrappers do not leave empty blocks', !r.pageHTML.includes('navbox-styles') && !r.pageHTML.includes('nested-menu-marker'));
+  check('maintenance text retained without failed decorative icon', r.pageHTML.includes('notice-text-marker') && !r.pageHTML.includes('decorative.svg') && r.resources.length === 0);
+  return checks;
+}());

@@ -8,6 +8,18 @@ var ExtensionPreprocessingJS = {
       'margin-top', 'margin-bottom', 'padding', 'border-color', 'border-width', 'border-style', 'border-collapse'];
     var htmlTags = new Set(('p div span article section main aside header footer h1 h2 h3 h4 h5 h6 a img br hr wbr strong b em i u s small sub sup pre code blockquote ul ol li dl dt dd table thead tbody tfoot tr td th caption colgroup col figure figcaption details summary').split(' '));
     var mathTags = new Set(('math mi mn mo mrow mfrac msqrt mroot msub msup msubsup mtext mover munder munderover mtable mtr mtd semantics annotation mstyle mpadded mspace menclose mfenced mmultiscripts mprescripts none maligngroup malignmark').split(' '));
+    // Prefer an explicit article container, never the first paragraph/article of
+    // a multi-post page. The source document and explicit user selection stay intact.
+    function contentRoot() {
+      var wiki = document.querySelector('#mw-content-text .mw-parser-output')
+        || document.querySelector('#mw-content-text')
+        || (document.body && document.body.matches('.mw-parser-output') ? document.body : null);
+      if (wiki && (wiki.textContent.trim() || wiki.querySelector('img,math'))) return {node: wiki, wiki: true};
+      var mains = Array.from(document.querySelectorAll('main,[role="main"]')).filter(function (item) {
+        return !item.parentElement.closest('main,[role="main"]') && (item.textContent.trim() || item.querySelector('img,math'));
+      });
+      return {node: mains.length === 1 ? mains[0] : document.body, wiki: false};
+    }
     function inlineStyle(target, original) {
       if (!original || !original.isConnected || mathTags.has(target.localName)) return;
       var computed = window.getComputedStyle(original), result = [];
@@ -41,12 +53,22 @@ var ExtensionPreprocessingJS = {
       wrapper.setAttribute('class', 'wiz-clip-formula'); wrapper.appendChild(visible);
       root.replaceWith(wrapper); formulaCount++; return true;
     }
-    function snapshot(node) {
+    function snapshot(node, articleMode) {
       var copy = node.cloneNode(true), originals = Array.from(node.querySelectorAll('*')),
         clones = Array.from(copy.querySelectorAll('*')), originalNodes = new WeakMap(), embedded = 0;
       if (clones.length > 100000) throw new Error('Page too complex');
       clones.forEach(function (item, i) { originalNodes.set(item, originals[i]); inlineStyle(item, originals[i]); });
       inlineStyle(copy, node.isConnected ? node : document.body);
+      if (articleMode) {
+        // Computed padding/margins belong to the website's surrounding layout,
+        // not the standalone note. Do not preserve a sidebar-width offset.
+        copy.style.margin = '0'; copy.style.padding = '0'; copy.style.borderWidth = '0';
+      }
+      if (articleMode === 'wiki') {
+        copy.querySelectorAll('.mw-editsection,.navbox,.navbox-styles,.vertical-navbox,.ambox .mbox-image,.mw-jump-link,.mw-indicators,.vector-header-container,.vector-column-start,.vector-column-end,#mw-panel-toc,#footer,.mw-footer').forEach(function (item) { item.remove(); });
+        // References, notes, infoboxes, tables, figures and section anchors are
+        // article content; do not blanket-delete aside/header/footer or lists.
+      }
       var backdrop = document.body;
       while (backdrop) {
         var color = window.getComputedStyle(backdrop).backgroundColor;
@@ -144,7 +166,23 @@ var ExtensionPreprocessingJS = {
     try {
       var selection = window.getSelection(), selected = document.createElement('div');
       if (selection) for (var i = 0; i < selection.rangeCount; i++) selected.appendChild(selection.getRangeAt(i).cloneContents());
-      var page = document.body ? snapshot(document.body) : '', chosen = selected.childNodes.length ? snapshot(selected) : '';
+      var root = contentRoot();
+      var page = root.node ? snapshot(root.node, root.wiki ? 'wiki' : 'article') : '';
+      if (root.wiki && page) {
+        // Keep provenance/license text compactly rather than copying all site
+        // footer menus, badges, last-edit controls and their computed spacing.
+        var source = document.createElement('div'), link = document.createElement('a');
+        source.setAttribute('style', 'margin-top:20px;padding:8px 0;font-size:13px;line-height:1.5');
+        link.href = location.href; link.textContent = document.title || 'Wikipedia'; source.appendChild(link);
+        var license = document.querySelector('#footer-info-copyright');
+        if (license && !root.node.contains(license)) {
+          var notice = document.createElement('div'); notice.innerHTML = snapshot(license);
+          notice.querySelectorAll('*').forEach(function (item) { item.removeAttribute('style'); });
+          source.appendChild(notice);
+        }
+        page += source.outerHTML;
+      }
+      var chosen = selected.childNodes.length ? snapshot(selected) : '';
       if (new Blob([page]).size > 8 * 1024 * 1024) page = '';
       if (new Blob([chosen]).size > 8 * 1024 * 1024) chosen = '';
       args.completionFunction({title: document.title, url: location.href, pageHTML: page, selectionHTML: chosen, resources: resources,

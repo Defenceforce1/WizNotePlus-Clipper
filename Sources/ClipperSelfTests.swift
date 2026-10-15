@@ -94,6 +94,8 @@ func cloudClipperSelfTest() -> Int32 {
 
 private final class CaptureTestRunner: NSObject, WKNavigationDelegate {
     var done = false, code: Int32 = 1
+    var contentCases: String?
+    var publicWiki = false, rendering = false
     let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 900, height: 600), configuration: WKWebViewConfiguration())
     override init() { super.init(); web.navigationDelegate = self }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
@@ -104,10 +106,34 @@ private final class CaptureTestRunner: NSObject, WKNavigationDelegate {
         print("FAIL synthetic navigation: \(error.localizedDescription)"); done = true
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if rendering { renderWikiArtifacts(); return }
         guard let file = Bundle.main.url(forResource: "ClipPage", withExtension: "js"), let js = try? String(contentsOf: file, encoding: .utf8) else { done = true; return }
         web.evaluateJavaScript(js + "\nvar captured; ExtensionPreprocessingJS.run({completionFunction:function(x){captured=x}}); captured;") { result, error in
             guard error == nil, let data = result as? [String: Any], let html = data["pageHTML"] as? String else {
                 print("FAIL WebKit snapshot: \(error?.localizedDescription ?? "no HTML")"); self.done = true; return
+            }
+            if self.publicWiki {
+                let checks: [(String, Bool)] = [
+                    ("public Wikipedia article opening retained", html.contains("homogeneous polynomial") && html.contains("quantic")),
+                    ("public Wikipedia sidebar menus excluded", !html.contains("Main menu") && !html.contains("Create account") && !html.contains("Jump to content")),
+                    ("public Wikipedia footer menus and badges excluded", !html.contains("footer-places") && !html.contains("footer-icons") && !html.contains("Edit preview settings")),
+                    ("public Wikipedia notes and references retained", html.contains("cite_note-1") && html.contains("cite_note-5") && html.contains("References") && html.contains("Notes")),
+                    ("public Wikipedia all article sections retained", html.contains("Homogenization") && html.contains("External links")),
+                    ("public Wikipedia semantic formulas retained", html.components(separatedBy: "<math").count > 10 && html.contains("<mfrac") && html.contains("<msup")),
+                    ("public Wikipedia license preserved without footer shell", html.contains("Creative Commons") && !html.contains("mw-footer-container")),
+                    ("public Wikipedia no section-edit or related navigation", !html.contains("mw-editsection") && !html.contains("class=\"navbox")),
+                    ("public Wikipedia scripts forms and handlers removed", !html.contains("<script") && !html.contains("<input") && !html.contains("onclick=")),
+                    ("public Wikipedia no sidebar or footer icon downloads", !(data["resources"] as? [String] ?? []).contains(where: { $0.contains("wikipedia-wordmark") || $0.contains("wikimedia-button") }))]
+                for (name, ok) in checks { print("\(ok ? "PASS" : "FAIL") \(name)") }
+                self.code = checks.allSatisfy({ $0.1 }) ? 0 : 1
+                print("Public Wikipedia local replay checks: \(checks.count), failures: \(checks.filter({ !$0.1 }).count). Network blocked, no cloud account.")
+                if let path = ProcessInfo.processInfo.environment["WIZNOTE_CLIPPER_TEST_ARTIFACT_DIR"], path.hasPrefix("/") {
+                    try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+                    try? html.write(toFile: path + "/wiki-captured.html", atomically: true, encoding: .utf8)
+                    self.rendering = true
+                    self.web.loadHTMLString("<!doctype html><meta charset='utf-8'><body style='margin:24px;font:16px/1.55 system-ui'>" + html, baseURL: nil)
+                } else { self.done = true }
+                return
             }
             let checks: [(String, Bool)] = [
                 ("static MathJax/KaTeX/native MathML retained once", html.components(separatedBy: "wiz-clip-formula").count - 1 == 5),
@@ -126,16 +152,48 @@ private final class CaptureTestRunner: NSObject, WKNavigationDelegate {
             for (name, ok) in checks { print("\(ok ? "PASS" : "FAIL") \(name)") }
             self.code = checks.allSatisfy({ $0.1 }) ? 0 : 1
             print("WebKit static capture checks: \(checks.count), failures: \(checks.filter({ !$0.1 }).count)")
-            self.done = true
+            guard let cases = self.contentCases else { self.done = true; self.code = 1; print("FAIL missing content regression fixture"); return }
+            self.web.evaluateJavaScript(cases) { result, error in
+                guard error == nil, let checks = result as? [[String: Any]], !checks.isEmpty else {
+                    print("FAIL content-boundary regression evaluation"); self.code = 1; self.done = true; return
+                }
+                var failed = 0
+                for item in checks {
+                    let ok = item["ok"] as? Bool == true
+                    if !ok { failed += 1 }
+                    print("\(ok ? "PASS" : "FAIL") \(item["name"] as? String ?? "unnamed content check")")
+                }
+                if failed > 0 { self.code = 1 }
+                print("Content-boundary checks: \(checks.count), failures: \(failed)")
+                self.done = true
+            }
+        }
+    }
+    func renderWikiArtifacts() {
+        guard let path = ProcessInfo.processInfo.environment["WIZNOTE_CLIPPER_TEST_ARTIFACT_DIR"] else { done = true; return }
+        web.takeSnapshot(with: nil) { image, error in
+            if let image, let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff), let png = bitmap.representation(using: .png, properties: [:]) {
+                try? png.write(to: URL(fileURLWithPath: path + "/wiki-top.png"))
+            } else { self.code = 1; print("FAIL Wikipedia top render") }
+            self.web.evaluateJavaScript("window.scrollTo(0, document.documentElement.scrollHeight)") { _, _ in
+                self.web.takeSnapshot(with: nil) { image, error in
+                    if let image, let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff), let png = bitmap.representation(using: .png, properties: [:]) {
+                        try? png.write(to: URL(fileURLWithPath: path + "/wiki-bottom.png"))
+                    } else { self.code = 1; print("FAIL Wikipedia bottom render") }
+                    self.done = true
+                }
+            }
         }
     }
 }
-func captureClipperSelfTest(fixture: String) -> Int32 {
+func captureClipperSelfTest(fixture: String, publicWiki: Bool = false) -> Int32 {
     // Only local named synthetic fixture; no credentials and no production endpoint.
-    guard fixture.hasPrefix("/"), fixture.hasSuffix("/clipper-cloud-page.html"),
+    guard fixture.hasPrefix("/"), fixture.hasSuffix(publicWiki ? "/wiki-public-original.html" : "/clipper-cloud-page.html"),
           let html = try? String(contentsOfFile: fixture, encoding: .utf8) else { return 2 }
     let app = NSApplication.shared; app.setActivationPolicy(.accessory); app.finishLaunching()
     let runner = CaptureTestRunner()
+    runner.publicWiki = publicWiki
+    if !publicWiki { runner.contentCases = try? String(contentsOf: URL(fileURLWithPath: fixture).deletingLastPathComponent().appendingPathComponent("clipper-content-cases.js"), encoding: .utf8) }
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
     window.title = "剪藏静态捕获合成测试"; window.contentView = runner.web; window.orderFront(nil)
     WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "synthetic-no-network",
