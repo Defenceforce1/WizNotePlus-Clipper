@@ -49,18 +49,28 @@ if CommandLine.arguments.count > 1 {
 }
 
 final class ClipperHost: NSObject, NSApplicationDelegate {
+    static let webVersionURL = URL(string: "https://note.wiz.cn/")!
     var window: NSWindow?
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 570, height: 310),
-            styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
-        window.title = "WizNotePlus 网页剪藏"
-        let text = NSTextField(wrappingLabelWithString:
-            "Apple Silicon 独立网页剪藏器 0.3.0\n\n在 Safari 网页点“分享 → WizNotePlus 网页剪藏”。\n登录为知账号，核对标题、文件夹与整页／选区。\n上传无需安装／打开主软件；需要联网。主软件之后正常同步即可。\n\n保存为 HTML＋图片／公式资源，不转成 Markdown。\n只推送，不查询结果；“服务器已接收”不等于保存已完成。\n本应用不读取旧剪藏器账号，已移除本地连接与预览。\n\n云端实际登录／上传仍需用户验收；未公证，另一台 Mac 加载尚未验证。")
-        text.frame = NSRect(x: 24, y: 40, width: 520, height: 240); window.contentView?.addSubview(text)
-        window.center(); window.makeKeyAndOrderFront(nil); self.window = window
+        window = makeWindow(); window?.center(); window?.makeKeyAndOrderFront(nil)
         let menu = NSMenu(); let root = NSMenuItem(); menu.addItem(root)
         let appMenu = NSMenu(); appMenu.addItem(withTitle: "退出网页剪藏", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         root.submenu = appMenu; NSApp.mainMenu = menu
+    }
+    func makeWindow() -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 570, height: 350),
+            styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        window.title = "WizNotePlus 网页剪藏"
+        let text = NSTextField(wrappingLabelWithString:
+            "Apple Silicon 独立网页剪藏器 0.3.1\n\n在 Safari 网页点“分享 → WizNotePlus 网页剪藏”。\n登录为知账号，核对标题、文件夹与整页／选区。\n上传无需安装／打开主软件；需要联网。主软件之后正常同步即可。\n\n保存为 HTML＋图片／公式资源，不转成 Markdown。\n服务器接收后自动关闭分享，不查询最终保存结果。\n可在网页版检查笔记；本应用不读取旧剪藏器账号。\n\n未公证，真实云端与另一台 Mac 加载仍需验收。")
+        text.frame = NSRect(x: 24, y: 76, width: 520, height: 250); window.contentView?.addSubview(text)
+        let web = NSButton(title: "打开网页版", target: self, action: #selector(openWebVersion(_:)))
+        web.bezelStyle = .rounded; web.frame = NSRect(x: 24, y: 22, width: 126, height: 32)
+        window.contentView?.addSubview(web)
+        return window
+    }
+    @objc func openWebVersion(_ sender: Any?) {
+        NSWorkspace.shared.open(Self.webVersionURL)
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }

@@ -23,12 +23,21 @@ final class ShareViewController: NSViewController {
     private let save = NSButton(title: "上传", target: nil, action: nil)
     private let cancel = NSButton(title: "取消", target: nil, action: nil)
     private let activity = NSProgressIndicator()
-    private let cloud = CloudClipClient()
+    private var cloud = CloudClipClient()
     private lazy var submission = CloudClipSubmission(client: cloud)
     private var cloudAccount: CloudClipAccount?
     private var input: ClipInput?
     private var loaded = false
     private var completed = false
+    private var requestFinished = false
+    private var onAcceptedShare: (() -> Void)?
+
+    // Injected transport/completion also lets isolated UI tests exercise the
+    // actual button action without credentials or a live extension request.
+    convenience init(cloud: CloudClipClient, onAcceptedShare: @escaping () -> Void) {
+        self.init(nibName: nil, bundle: nil)
+        self.cloud = cloud; self.onAcceptedShare = onAcceptedShare
+    }
 
     override func loadView() {
         view = ClipperFormView(frame: NSRect(x: 0, y: 0, width: 460, height: 340))
@@ -47,7 +56,7 @@ final class ShareViewController: NSViewController {
             label.textColor = .secondaryLabelColor; label.frame = NSRect(x: 28, y: y, width: 60, height: 20); view.addSubview(label)
         }
         titleField.frame = NSRect(x: 102, y: 226, width: 326, height: 26)
-        titleField.placeholderString = "笔记标题"; view.addSubview(titleField)
+        titleField.placeholderString = "笔记标题"; titleField.isEnabled = false; view.addSubview(titleField)
         account.frame = NSRect(x: 102, y: 190, width: 226, height: 22)
         account.lineBreakMode = .byTruncatingMiddle; view.addSubview(account)
         login.frame = NSRect(x: 334, y: 185, width: 94, height: 28)
@@ -83,18 +92,21 @@ final class ShareViewController: NSViewController {
                           let results = dictionary[NSExtensionJavaScriptPreprocessingResultsKey] as? [String: Any] else {
                         throw ClipperError.message("Safari 未返回网页正文，请重试分享")
                     }
-                    let input = try ClipInput(dictionary: results); self.input = input
-                    self.titleField.stringValue = input.title
-                    self.mode.setEnabled(!input.pageHTML.isEmpty, forSegment: 0)
-                    self.mode.setEnabled(!input.selectionHTML.isEmpty, forSegment: 1)
-                    self.mode.selectedSegment = input.pageHTML.isEmpty ? 1 : 0
-                    self.cloudAccount = ClipCredentialStore.loadCloud()
-                    self.account.stringValue = self.cloudAccount?.userID ?? "未登录为知云端"; self.account.toolTip = self.cloudAccount?.userID
-                    self.status.stringValue = "请确认账号和文件夹；上传需要联网。"
-                    if self.cloudAccount != nil { self.refreshCloudFolders() }
+                    self.configureShare(input: try ClipInput(dictionary: results), account: ClipCredentialStore.loadCloud())
                 } catch { self.status.stringValue = error.localizedDescription }
             }
         }
+    }
+
+    func configureShare(input: ClipInput, account: CloudClipAccount?) {
+        self.input = input; cloudAccount = account
+        titleField.stringValue = input.title; titleField.isEnabled = true
+        mode.setEnabled(!input.pageHTML.isEmpty, forSegment: 0)
+        mode.setEnabled(!input.selectionHTML.isEmpty, forSegment: 1)
+        mode.selectedSegment = input.pageHTML.isEmpty ? 1 : 0
+        self.account.stringValue = account?.userID ?? "未登录为知云端"; self.account.toolTip = account?.userID
+        status.stringValue = "请确认账号和文件夹；上传需要联网。"
+        if account != nil { refreshCloudFolders() }
     }
 
     @objc private func loginCloud() {
@@ -153,8 +165,14 @@ final class ShareViewController: NSViewController {
     @objc private func saveNote() {
         guard !completed, let input, let account = cloudAccount, let folder = folders.selectedItem?.title,
               submission.phase == .ready else { return }
+        // NSTextField can still be using the shared field editor when a button
+        // is clicked. Commit that edit before snapshotting metadata for async work.
+        if let window = view.window, !window.makeFirstResponder(nil) {
+            status.stringValue = "请先完成标题编辑，再上传。"; return
+        }
+        let title = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         setEditing(false); activity.startAnimation(nil); status.stringValue = "正在准备上传…"
-        submission.submit(account: account, input: input, title: titleField.stringValue, folder: folder,
+        submission.submit(account: account, input: input, title: title, folder: folder,
             selection: mode.selectedSegment == 1, progress: { [weak self] count, total in
                 guard let self, !self.completed else { return }; self.status.stringValue = "正在处理图片 \(count)/\(total)…"
             }, uploading: { [weak self] in
@@ -163,22 +181,26 @@ final class ShareViewController: NSViewController {
                 guard let self, !self.completed else { return }; self.activity.stopAnimation(nil)
                 switch outcome {
                 case .accepted(_, let missing):
-                    self.completed = true; self.save.title = "已推送"; self.cancel.title = "关闭"
+                    self.completed = true; self.save.isHidden = true; self.cancel.isHidden = true
                     self.status.stringValue = "服务器已接收，尚未确认最终保存。"
                         + (missing > 0 ? "\n\(missing) 处资源未嵌入，可对照原网页。" : "")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                        self?.extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
-                    }
+                    self.finishAcceptedShare()
                 case .preparationFailed(let error): self.setEditing(true); self.status.stringValue = error.localizedDescription
                 case .uncertain(let error):
-                    self.save.title = "未确认"; self.cancel.title = "关闭"
-                    self.status.stringValue = error.localizedDescription + "\n请到网页版检查；不自动重传，可关闭此窗口。"
+                    self.save.title = "未确认"
+                    self.status.stringValue = error.localizedDescription + "\n请到网页版检查；不自动重传，可取消此窗口。"
                 }
             }
     }
 
+    private func finishAcceptedShare() {
+        guard !requestFinished else { return }; requestFinished = true
+        if let onAcceptedShare { onAcceptedShare() }
+        else { extensionContext?.completeRequest(returningItems: [], completionHandler: nil) }
+    }
+
     @objc private func cancelShare() {
-        if completed { extensionContext?.completeRequest(returningItems: [], completionHandler: nil); return }
+        if completed { finishAcceptedShare(); return }
         completed = true; submission.cancel()
         extensionContext?.cancelRequest(withError: NSError(domain: NSCocoaErrorDomain, code: NSUserCancelledError))
     }

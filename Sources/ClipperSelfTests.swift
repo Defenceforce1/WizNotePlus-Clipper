@@ -25,6 +25,14 @@ func cloudClipperSelfTest() -> Int32 {
     let encoded = String(frame[Range(match.range(at: 1), in: frame)!])
     let decoded = String(data: Data(base64Encoded: encoded)!, encoding: .utf8)!
     check(decoded.contains("<math>") && decoded.contains("data:image/png") && decoded.contains("<!DOCTYPE html>"), "upload retains HTML/math/images, not Markdown")
+    check(decoded.contains("<title>公式测试</title>"), "edited title also appears in HTML document metadata")
+    let renamed = "新标题 & </title><script>bad</script> 中文"
+    let renamedBody = try! CloudClipClient.gatherBody(account: account, requestID: id, title: renamed, folder: "/网页剪藏/", sourceURL: "https://example.invalid/math", html: "<p>body</p>")
+    let renamedFrame = renamedBody["data"] as! String
+    let renamedMatch = regex.firstMatch(in: renamedFrame, range: NSRange(renamedFrame.startIndex..., in: renamedFrame))!
+    let renamedHTML = String(data: Data(base64Encoded: String(renamedFrame[Range(renamedMatch.range(at: 1), in: renamedFrame)!]))!, encoding: .utf8)!
+    check(renamedFrame.contains("param-title='" + Data(renamed.utf8).base64EncodedString() + "'"), "Unicode renamed title is preserved in the gather parameter")
+    check(renamedHTML.contains("<title>新标题 &amp; &lt;/title&gt;&lt;script&gt;bad&lt;/script&gt; 中文</title>") && !renamedHTML.contains("<script>"), "renamed title cannot inject HTML or close its title element")
     var requests: [URLRequest] = [], uploadReply: [String: Any] = ["code": 200, "id": "synthetic-task"]
     let client = CloudClipClient(transport: { request, callback in
         requests.append(request)
@@ -158,7 +166,7 @@ func submissionClipperSelfTest() -> Int32 {
     }
     check(accepted && submission.phase == .accepted && requests.count == 1, "one POST ends at API acceptance without task ID or status query")
     let sent = try! JSONSerialization.jsonObject(with: requests[0].httpBody!) as! [String: Any]
-    check((sent["data"] as! String).contains(Data("<!DOCTYPE html><html><head><meta charset=\"UTF-8\"></head><body><p>chosen-only</p></body></html>".utf8).base64EncodedString()), "selected HTML, not whole page or summary, reaches upload")
+    check((sent["data"] as! String).contains(Data("<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>测试</title></head><body><p>chosen-only</p></body></html>".utf8).base64EncodedString()), "selected HTML and title, not whole page or summary, reach upload")
     submission.submit(account: account, input: input, title: "again", folder: "/网页剪藏/", selection: false, progress: { _,_ in }) { _ in failures += 1 }
     check(requests.count == 1, "repeated click after acceptance cannot upload again")
     var uncertainPosts = 0, uncertain = false
@@ -225,6 +233,42 @@ func shareUIClipperSelfTest() -> Int32 {
         }
     }
     window.close()
-    print("Share UI checks: \(checks.count), failures: \(checks.filter { !$0.1 }.count). No account/keychain accessed.")
-    return checks.allSatisfy { $0.1 } ? 0 : 1
+    var added = 0, failures = checks.filter { !$0.1 }.count
+    func check(_ ok: Bool, _ name: String) { added += 1; if !ok { failures += 1 }; print("\(ok ? "PASS" : "FAIL") \(name)") }
+    let synthetic = try! CloudClipAccount(["token": "synthetic-only-token", "kbGuid": "00000000-0000-0000-0000-000000000001", "userGuid": "00000000-0000-0000-0000-000000000002", "userID": "synthetic@example.invalid"])
+    var uploads: [[String: Any]] = [], finished = 0
+    let transport = CloudClipClient(transport: { request, callback in
+        if request.url!.path == "/ks/gather" {
+            uploads.append(try! JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]); callback(.success(["code": 200]))
+        } else { callback(.success(["code": 200, "result": ["/网页剪藏/"]])) }
+    })
+    let editing = ShareViewController(cloud: transport, onAcceptedShare: { finished += 1 })
+    let editorWindow = NSWindow(contentRect: editing.view.bounds, styleMask: [.titled], backing: .buffered, defer: false)
+    editorWindow.isReleasedWhenClosed = false; editorWindow.contentViewController = editing; editorWindow.makeKeyAndOrderFront(nil)
+    editing.configureShare(input: try! ClipInput(dictionary: ["url": "https://example.invalid/page", "title": "original-source-title", "pageHTML": "<p>body</p>"]), account: synthetic)
+    let editViews = descendants(editing.view)
+    let title = editViews.compactMap { $0 as? NSTextField }.first(where: { $0.isEditable })!
+    editorWindow.makeFirstResponder(title)
+    let fieldEditor = title.currentEditor() as? NSTextView
+    let renamed = "重命名标题 α & <测试>"
+    fieldEditor?.string = renamed
+    check(fieldEditor != nil && editorWindow.firstResponder === fieldEditor, "rename test edits the live native field editor rather than setting the control value")
+    let upload = editViews.compactMap { $0 as? NSButton }.first(where: { $0.title == "上传" })!
+    upload.performClick(nil)
+    let data = uploads.first?["data"] as? String ?? ""
+    check(uploads.count == 1 && data.contains("param-title='" + Data(renamed.utf8).base64EncodedString() + "'"), "real upload button commits the active title edit before creating the request")
+    check(data.contains(Data("<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>重命名标题 α &amp; &lt;测试&gt;</title></head><body><p>body</p></body></html>".utf8).base64EncodedString()), "real button carries renamed title consistently into HTML")
+    check(finished == 1, "accepted push immediately finishes the share request without a timer")
+    check(upload.isHidden && !editViews.compactMap({ $0 as? NSButton }).contains(where: { $0.title == "关闭" }), "accepted share has no close button")
+    upload.performClick(nil)
+    check(finished == 1 && uploads.count == 1, "repeated completion action cannot upload or finish twice")
+    editorWindow.close()
+    let host = ClipperHost(); let hostWindow = host.makeWindow(); hostWindow.isReleasedWhenClosed = false
+    let hostButtons = descendants(hostWindow.contentView!).compactMap { $0 as? NSButton }
+    let web = hostButtons.first(where: { $0.title == "打开网页版" })
+    check(web != nil && web?.action == #selector(ClipperHost.openWebVersion(_:)) && (web?.target as? ClipperHost) === host, "startup page has a wired open-web-version button")
+    check(ClipperHost.webVersionURL.absoluteString == "https://note.wiz.cn/" && ClipperHost.webVersionURL.query == nil, "web button uses only the official HTTPS URL without account tokens")
+    hostWindow.close()
+    print("Share UI checks: \(checks.count + added), failures: \(failures). Synthetic account only; no keychain accessed.")
+    return failures == 0 ? 0 : 1
 }

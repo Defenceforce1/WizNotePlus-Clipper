@@ -23,7 +23,8 @@ cp "$project_dir/licenses/WizNotePlus-NOTICE.txt" "$app/Contents/Resources/LICEN
 cp "$project_dir/LICENSE" "$app/Contents/Resources/GPL-3.0.txt"
 cp "$project_dir/README.md" "$app/Contents/Resources/README.md"
 if [[ -f "$resource_dir/AppIcon.icns" ]]; then
-    cp "$resource_dir/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
+    xcrun swift "$project_dir/scripts/prepare-icon.swift" "$resource_dir/AppIcon.icns" "$output/AppIcon.iconset"
+    iconutil -c icns "$output/AppIcon.iconset" -o "$app/Contents/Resources/AppIcon.icns"
     /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string AppIcon' "$app/Contents/Info.plist"
 fi
 sdk=$(xcrun --sdk macosx --show-sdk-path)

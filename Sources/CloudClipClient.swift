@@ -125,7 +125,11 @@ final class CloudClipClient {
               !account.userID.contains("'"), !account.userID.contains("\""),
               !account.userID.contains("<"), !account.userID.contains(">") else { throw ClipperError.message("上传内容或目的文件夹无效") }
         func encoded(_ value: String) -> String { Data(value.utf8).base64EncodedString() }
-        let document = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"></head><body>" + html + "</body></html>"
+        let escapedTitle = title.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+        // Both metadata and the HTML document must carry the edited title.
+        // Otherwise a server-side collector can fall back to the source page.
+        let document = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>" + escapedTitle + "</title></head><body>" + html + "</body></html>"
         let data = "myWiz='\(account.userGuid)@userguid' SaveResources='true' document_guid='\(requestID)' "
             + "param-fcount='1' param-location='\(encoded(sourceURL))' param-title='\(encoded(title))' "
             + "0_FrameURL='\(encoded(sourceURL))' 0_FrameHtml='\(encoded(document))' "
