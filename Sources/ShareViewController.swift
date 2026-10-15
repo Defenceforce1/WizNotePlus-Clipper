@@ -15,13 +15,14 @@ private final class ClipperFormView: NSView {
 final class ClipLoginForm: NSView, NSTextFieldDelegate {
     let user = NSTextField(frame: NSRect(x: 0, y: 70, width: 310, height: 26))
     let password = NSSecureTextField(frame: NSRect(x: 0, y: 36, width: 310, height: 26))
-    let remember = NSButton(checkboxWithTitle: "记住密码（仅存于本机钥匙串）", target: nil, action: nil)
+    let remember = NSButton(checkboxWithTitle: "记住密码", target: nil, action: nil)
     private let loadedUser: String?
     init(userID: String, secret: ClipLoginSecret?) {
         loadedUser = secret?.userID
         super.init(frame: NSRect(x: 0, y: 0, width: 310, height: 102))
         user.placeholderString = "为知账号"; user.stringValue = userID; user.delegate = self
         password.placeholderString = "密码"
+        remember.toolTip = "密码仅保存在本机系统钥匙串，不通过 iCloud 同步。"
         if secret?.userID == userID { password.stringValue = secret?.password ?? "" }
         remember.frame = NSRect(x: 0, y: 0, width: 310, height: 24); remember.state = .on
         addSubview(user); addSubview(password); addSubview(remember)

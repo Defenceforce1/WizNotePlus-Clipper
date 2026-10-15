@@ -1,6 +1,6 @@
 # 独立工程迁移记录
 
-本文及 source-baseline.sha256 固定记录原始 0.2.0 拆分基线，不用来检查后来 0.3.0 修改后的文件。当前版本与验证以 README／release-0.3.0.md 为准，历史基线提交仍完整保留。
+本文及 source-baseline.sha256 固定记录原始0.2.0拆分基线，不用来检查后续版本文件。当前版本与验证以README／VERIFICATION.md为准，历史基线提交仍完整保留。
 
 2026-10-15，用户要求主项目收尾清理，并将剪藏器独立为本地／GitHub 项目 `WizNotePlus-Clipper`。
 

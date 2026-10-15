@@ -25,7 +25,7 @@ bash build/osx/native-clipper/build.sh /absolute/new-output-folder 'Apple Develo
 '/absolute/new-output-folder/WizNotePlus Web Clipper.app/Contents/MacOS/WizNotePlusClipper' --capture-self-test /absolute/source/tests/compat/fixtures/clipper-cloud-page.html
 ```
 
-`--cloud-self-test` 不连接真实服务器；`--public-image-self-test` 仅下载一个固定上游公开 PNG，不涉及登录。完整变化和官方来源见 [独立剪藏说明](../../../docs/standalone-web-clipper.md)。以下 0.1.1 本机方案的“客户端必须运行”等限制只适用于本机入口，不适用于新云端入口。
+`--cloud-self-test` 不连接真实服务器；`--public-image-self-test` 仅下载一个固定上游公开 PNG，不涉及登录。完整变化和官方来源见 [独立剪藏说明](standalone-web-clipper.md)。以下 0.1.1 本机方案的“客户端必须运行”等限制只适用于本机入口，不适用于新云端入口。
 
 独立 arm64 系统分享扩展。当前用于 Safari 加载联调，不是已验收的发行包；不覆盖旧剪藏器。最低部署目标 macOS 14，实际系统兼容性以测试为准。
 
@@ -47,7 +47,7 @@ bash build/osx/native-clipper/build.sh /absolute/new-output-folder 'Apple Develo
 
 可省略开发身份作临时签名编译检查，但不能据此保证系统会加载扩展。输出目录必须不存在。脚本编译宿主和扩展、内嵌 GPL 许可、验证签名与 arm64 架构，并运行 10 项纯输入模型测试。密码／私钥不需要导出。
 
-客户端需同时包含 `WizNativeClipperBridge`。本地接口设计与参考核查见 [评估文档](../../../docs/web-clipper-reference-review.md)。
+客户端需同时包含 `WizNativeClipperBridge`。本地接口设计与参考核查见 [评估文档](web-clipper-reference-review.md)。
 
 ## 隔离验证
 
@@ -60,4 +60,4 @@ QT_QPA_PLATFORM=offscreen /absolute/source-build/WizNotePlus --native-clipper-tr
 
 这些精确参数在正常登录前进入独立临时数据库。协议测试使用随机 loopback 端口，Swift 客户端拒绝测试连接 8848／8849，不读取真实钥匙串或账号。部署包只有 cocoa 插件时，使用 `QT_QPA_PLATFORM=cocoa`，不要照抄源码构建的 offscreen 设置。
 
-更新：0.1.1 已在本机 Safari 实际调起，扩展沙盒到合成资料库的整页／选区保存通过，保留基础计算样式、表格、嵌入图片和 MathML 上标。测试配对不保存钥匙串；真实配对持久化、多机免费签名加载和配套客户端部署仍需验证。原版复现差异见 [验收记录](../../../docs/native-clipper-parity.md)。不要关闭系统保护、不冒充公证或正式通用签名包。当前源码参考两个社区项目的功能与协议，但没有复制其代码／图标／库；新实现采用 GPL-3.0-or-later。
+更新：0.1.1 已在本机 Safari 实际调起，扩展沙盒到合成资料库的整页／选区保存通过，保留基础计算样式、表格、嵌入图片和 MathML 上标。测试配对不保存钥匙串；真实配对持久化、多机免费签名加载和配套客户端部署仍需验证。原版复现差异见 [验收记录](native-clipper-parity.md)。不要关闭系统保护、不冒充公证或正式通用签名包。当前源码参考两个社区项目的功能与协议，但没有复制其代码／图标／库；新实现采用 GPL-3.0-or-later。

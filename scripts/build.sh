@@ -20,7 +20,7 @@ cp "$config_dir/Extension-Info.plist" "$extension/Contents/Info.plist"
 cp "$resource_dir/ClipPage.js" "$extension/Contents/Resources/ClipPage.js"
 cp "$project_dir/licenses/WizNotePlus-NOTICE.txt" "$app/Contents/Resources/LICENSE.txt"
 cp "$project_dir/LICENSE" "$app/Contents/Resources/GPL-3.0.txt"
-cp "$project_dir/README.md" "$app/Contents/Resources/README.md"
+cp "$project_dir/docs/USER_GUIDE.md" "$app/Contents/Resources/README.md"
 if [[ -d "$resource_dir/AppIcon.icon" ]]; then
     bash "$project_dir/scripts/compile-icon.sh" "$resource_dir/AppIcon.icon" "$output/CompiledIcon"
     cp "$output/CompiledIcon/Assets.car" "$app/Contents/Resources/Assets.car"

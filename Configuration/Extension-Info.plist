@@ -3,11 +3,11 @@
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>io.github.defenceforce1.wiznoteplus.clipper.mac.share</string>
 <key>CFBundleExecutable</key><string>WizNotePlusShare</string>
-<key>CFBundleName</key><string>WizNotePlus 网页剪藏</string>
-<key>CFBundleDisplayName</key><string>WizNotePlus 网页剪藏</string>
+<key>CFBundleName</key><string>为知笔记</string>
+<key>CFBundleDisplayName</key><string>为知笔记</string>
 <key>CFBundlePackageType</key><string>XPC!</string>
-<key>CFBundleVersion</key><string>15</string>
-<key>CFBundleShortVersionString</key><string>0.3.8</string>
+<key>CFBundleVersion</key><string>17</string>
+<key>CFBundleShortVersionString</key><string>1.0.0</string>
 <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
 <key>CFBundleSupportedPlatforms</key><array><string>MacOSX</string></array>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
