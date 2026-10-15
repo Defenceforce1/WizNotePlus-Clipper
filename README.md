@@ -22,7 +22,7 @@ macOS14及以上，Apple Silicon。个人安装包使用已有 **Apple Developme
 
 ## 开发资料
 
-[构建](docs/DEVELOPMENT.md) · [验证](docs/VERIFICATION.md) · [图标](docs/ICON.md) · [发行说明](docs/release-1.0.0.md) · [维护范围](docs/ROADMAP.md)
+[构建](docs/DEVELOPMENT.md) · [验证](docs/VERIFICATION.md) · [图标](docs/ICON.md) · [发行说明](docs/release-1.0.0.md) · [维护范围](docs/ROADMAP.md) · [最新维护状态](docs/MAINTENANCE.md)
 
 旧版本及试验集中于 [docs/history](docs/history/README.md)，不是当前使用指南。本机构建与发行包位于忽略的 `outputs/`。
 
