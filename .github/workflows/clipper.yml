@@ -17,12 +17,12 @@ jobs:
         run: |
           test "$(uname -m)" = arm64
           bash scripts/build.sh "$RUNNER_TEMP/wiznote-clipper"
-          bash scripts/test.sh "$RUNNER_TEMP/wiznote-clipper/WizNotePlus Web Clipper.app"
-          bash scripts/check-release.sh "$RUNNER_TEMP/wiznote-clipper/WizNotePlus Web Clipper.app"
+          bash scripts/test.sh "$RUNNER_TEMP/wiznote-clipper/WizNotePlus Clipper.app"
+          bash scripts/check-release.sh "$RUNNER_TEMP/wiznote-clipper/WizNotePlus Clipper.app"
       - name: Archive corresponding source and test-only app
         run: |
           git archive --format=tar.gz --output="$RUNNER_TEMP/WizNotePlus-Clipper-source.tar.gz" HEAD
-          ditto -c -k --keepParent "$RUNNER_TEMP/wiznote-clipper/WizNotePlus Web Clipper.app" "$RUNNER_TEMP/WizNotePlus-Clipper-adhoc-test.zip"
+          ditto -c -k --keepParent "$RUNNER_TEMP/wiznote-clipper/WizNotePlus Clipper.app" "$RUNNER_TEMP/WizNotePlus-Clipper-adhoc-test.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: WizNotePlus-Clipper-adhoc-test-only

@@ -12,7 +12,8 @@ if [[ "$sign_identity" != - ]]; then
     [[ "$sign_identity" == 'Apple Development: '* ]] || exit 2
     security find-identity -v -p codesigning | /usr/bin/grep -Fq -- "\"$sign_identity\"" || exit 1
 fi
-app="$output/WizNotePlus Web Clipper.app"
+assembly="$output/.Assembly"
+app="$assembly/WizNotePlus Clipper.app"
 extension="$app/Contents/PlugIns/WizNotePlusShare.appex"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$extension/Contents/MacOS" "$extension/Contents/Resources"
 cp "$config_dir/Host-Info.plist" "$app/Contents/Info.plist"
@@ -48,7 +49,6 @@ if [[ -f "$app/Contents/Resources/AppIcon.icns" ]]; then
     iconutil -c icns "$output/ShareIcon.iconset" -o "$extension/Contents/Resources/ShareIcon.icns"
     /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string ShareIcon.icns' "$extension/Contents/Info.plist"
 fi
-xcrun swift "$project_dir/scripts/check-bundle-icons.swift" "$app"
 sdk=$(xcrun --sdk macosx --show-sdk-path)
 common=("$source_dir/ClipInput.swift" "$source_dir/ClipCredentialStore.swift" "$source_dir/CloudClipClient.swift" "$source_dir/ClipResources.swift" "$source_dir/CloudClipSubmission.swift")
 xcrun swiftc -sdk "$sdk" -target arm64-apple-macos14.0 -Osize -whole-module-optimization -Xlinker -dead_strip \
@@ -63,11 +63,16 @@ codesign --force --sign "$sign_identity" --timestamp=none "$app"
 codesign --verify --deep --strict "$app"
 lipo "$app/Contents/MacOS/WizNotePlusClipper" -verify_arch arm64
 lipo "$extension/Contents/MacOS/WizNotePlusShare" -verify_arch arm64
+# Keep incomplete bundles out of the final path; inspect only complete signed packages.
+xcrun swift "$project_dir/scripts/check-bundle-icons.swift" "$app"
+mv "$app" "$output/WizNotePlus Clipper.app"
+rmdir "$assembly"
+app="$output/WizNotePlus Clipper.app"
 # Test/UI/capture code stays outside the distributable app.
 checks="$output/Tests/ClipperChecks.app"
 mkdir -p "$checks/Contents/MacOS" "$checks/Contents/Resources"
 cp "$config_dir/Host-Info.plist" "$checks/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier io.github.defenceforce1.wiznoteplus.clipper.checks' "$checks/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier io.github.defenceforce1.wiznoteplus.webclipper.checks' "$checks/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleExecutable ClipperChecks' "$checks/Contents/Info.plist"
 cp "$resource_dir/ClipPage.js" "$checks/Contents/Resources/ClipPage.js"
 xcrun swiftc -sdk "$sdk" -target arm64-apple-macos14.0 -framework AppKit -framework Foundation -framework Security \
@@ -82,4 +87,4 @@ codesign --force --sign - --timestamp=none "$checks"
 [[ $(stat -f %z "$app/Contents/MacOS/WizNotePlusClipper") -lt 100000 ]]
 [[ ! -e "$app/Contents/Resources/ClipPage.js" ]]
 echo 'PASS distributable host excludes self-tests and duplicate page script'
-printf '%s\n' 'Native clipping candidate built. Safari load and multi-Mac signing still require verification.'
+printf '%s\n' 'Release package built; actual Safari display and multi-Mac loading require separate verification.'

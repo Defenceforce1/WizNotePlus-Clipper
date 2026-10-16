@@ -27,9 +27,10 @@ struct ClipLoginStorage {
 }
 
 enum ClipCredentialStore {
+    // Stable 1.1 identity: never load or migrate another app's saved login.
     private static var cloudQuery: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
-         kSecAttrService as String: "io.github.defenceforce1.wiznoteplus.clipper.cloud",
+         kSecAttrService as String: "io.github.defenceforce1.wiznoteplus.webclipper.cloud",
          kSecAttrAccount as String: "official-account"]
     }
     static func loadCloud() -> CloudClipAccount? {
@@ -43,7 +44,7 @@ enum ClipCredentialStore {
     // login with the visible remember-password checkbox enabled.
     private static var passwordQuery: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
-         kSecAttrService as String: "io.github.defenceforce1.wiznoteplus.clipper.cloud.password",
+         kSecAttrService as String: "io.github.defenceforce1.wiznoteplus.webclipper.cloud.password",
          kSecAttrAccount as String: "official-account"]
     }
     static func loadSecret(userID: String?) -> ClipLoginSecret? {

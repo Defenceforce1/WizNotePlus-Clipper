@@ -1,10 +1,12 @@
 # 为知笔记网页剪藏
 
-版本1.0.0 · Apple Silicon · macOS14及以上
+版本1.1.0 · Apple Silicon · macOS14及以上
 
 ## 安装与更新
 
-将 `WizNotePlus Web Clipper.app` 拖入“应用程序”。更新前请关闭剪藏窗口并正常退出 Safari，再替换原应用。不要保留多份运行副本。
+将 `WizNotePlus Clipper.app` 拖入“应用程序”。以后更新前请关闭剪藏窗口并正常退出 Safari，再替换同名应用。不要保留多份运行副本。
+
+从1.0.0升级时，新版被系统视为独立应用：请重新启用分享扩展并登录。旧版 `WizNotePlus Web Clipper.app` 可由你自行删除；不要删除主笔记App或笔记资料库。新版不读取、导入或删除旧版保存的账号信息。
 
 ## 保存网页
 
