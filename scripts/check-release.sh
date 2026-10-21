@@ -12,7 +12,7 @@ echo 'PASS stable host and extension identities'
 [[ $(get "$app" CFBundleDisplayName) == 为知笔记网页剪藏 ]]
 echo 'PASS release display names match the requested share menu label'
 for bundle in "$app" "$extension"; do
-    [[ $(get "$bundle" CFBundleShortVersionString) == 1.1.0 && $(get "$bundle" CFBundleVersion) == 19 ]]
+    [[ $(get "$bundle" CFBundleShortVersionString) == 1.1.1 && $(get "$bundle" CFBundleVersion) == 20 ]]
 done
 echo 'PASS host and extension release versions agree'
 [[ $(get "$app" LSUIElement) == true ]]

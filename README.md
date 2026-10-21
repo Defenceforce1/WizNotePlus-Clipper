@@ -1,6 +1,6 @@
 # WizNotePlus Clipper
 
-为知笔记网页剪藏工具，支持 Apple Silicon Mac。当前版本 **1.1.0 正式自用版**，应用文件为 `WizNotePlus Clipper.app`，Safari 分享菜单名称为“为知笔记”。可独立保存网页到为知云端，无需启动主笔记客户端。
+为知笔记网页剪藏工具，支持 Apple Silicon Mac。当前版本 **1.1.1 自用维护版**，应用文件为 `WizNotePlus Clipper.app`，Safari 分享菜单名称为“为知笔记”。可独立保存网页到为知云端，无需启动主笔记客户端。本仓库仅发布源码；完整个人签名安装包保留本机，不提供公开二进制下载。
 
 ## 使用
 
@@ -11,6 +11,7 @@
 - HTML 笔记及图片，支持可静态保存的公式、代码着色、缩进与换行。
 - 优先识别正文；主动选择按选区保留，公式按完整表达式处理。
 - 密码仅保存在本扩展的本机钥匙串，不读取旧客户端凭据。
+- 账号目录返回前文件夹留空，返回后只使用已有目录，不额外补建“网页剪藏”。
 - 上传只提交一次；结果不明确时不自动重复上传，可在网页版检查。
 - 复杂 SVG/canvas、受保护资源及部分网页排版可能无法完整保存。
 
@@ -22,7 +23,7 @@ macOS14及以上，Apple Silicon。个人安装包使用已有 **Apple Developme
 
 ## 开发资料
 
-[构建](docs/DEVELOPMENT.md) · [验证](docs/VERIFICATION.md) · [图标](docs/ICON.md) · [发行说明](docs/release-1.1.0.md) · [维护范围](docs/ROADMAP.md) · [最新维护状态](docs/MAINTENANCE.md)
+[构建](docs/DEVELOPMENT.md) · [验证](docs/VERIFICATION.md) · [图标](docs/ICON.md) · [发行说明](docs/release-1.1.1.md) · [维护范围](docs/ROADMAP.md) · [最新维护状态](docs/MAINTENANCE.md)
 
 旧版本及试验集中于 [docs/history](docs/history/README.md)，不是当前使用指南。本机构建与发行包位于忽略的 `outputs/`。
 

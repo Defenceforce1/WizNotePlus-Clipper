@@ -2,6 +2,7 @@
 
 ## Current release scope
 
+- 1.1.1/build20 completed on2026-10-21: folder GET starts empty/disabled, only actual returned folders can be selected, no synthetic clip folder; stale replies ignored. Signed local delivery under outputs/v1.1.1-delivery:181 synthetic checks,11 bundle checks, ZIP/DMG extraction equality and unchanged signing team passed. NOT installed; actual Safari/account checks not repeated. User chose source-only GitHub publication; signed installers and branded art stay local. Generated intermediates moved to Trash with manifest; preserve current1.1.1 and prior1.1.0, original art and retained historical rollback/evidence.
 - 1.1.0/build19 completed: actual installed /Applications/WizNotePlus Clipper.app shows correct W+scissors and 为知笔记 in Safari; strict signatures and ZIP/DMG byte comparison passed, all synthetic checks passed. No live login/upload. Current package under outputs/v1.1.0-delivery, original artwork and1.0.0 rollback retained. Main app unchanged; user handles old app deletion.
 - User explicitly authorized a new permanent identity for the clipper's final personal-use release on2026-10-16. Version1.1.0/build19, application filename **WizNotePlus Clipper.app** (English as requested); host display name 为知笔记网页剪藏, share name 为知笔记.
 - Stable host ID: io.github.defenceforce1.wiznoteplus.webclipper. Stable extension ID: io.github.defenceforce1.wiznoteplus.webclipper.share. Never reuse diagnostic IDs; future upgrades keep these IDs and the signing team fixed.
@@ -35,4 +36,4 @@ Fresh no-accountA/B and complete same-code/resource copies with new IDs showed c
 
 All diagnostic identities/apps/intermediates were removed after tests; local evidence/instructions remain under ignored outputs/icon-*. They are not release recipes.1.1.0 is an explicitly authorized stable-identity workaround; validate the actual installed new release, do not assume diagnostic success guarantees it. Future icon changes may remain stale; avoid endless reboot/reinstall or identity churn.
 
-Current docs: README.md and docs/{USER_GUIDE,DEVELOPMENT,VERIFICATION,ICON,ROADMAP,MAINTENANCE,release-1.1.0}. History is in docs/history.
+Current docs: PROGRESS.md, README.md and docs/{USER_GUIDE,DEVELOPMENT,VERIFICATION,ICON,ROADMAP,MAINTENANCE,release-1.1.1}. History is in docs/history.
