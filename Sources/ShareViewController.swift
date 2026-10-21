@@ -56,6 +56,7 @@ final class ShareViewController: NSViewController {
     private var requestFinished = false
     private var onAcceptedShare: (() -> Void)?
     private var persistenceWarning: String?
+    private var folderRequestID = UUID()
 
     // Injected transport/completion also lets isolated UI tests exercise the
     // actual button action without credentials or a live extension request.
@@ -83,7 +84,7 @@ final class ShareViewController: NSViewController {
         account.lineBreakMode = .byTruncatingMiddle; view.addSubview(account)
         login.frame = NSRect(x: 334, y: 165, width: 94, height: 28)
         login.bezelStyle = .rounded; login.target = self; login.action = #selector(loginCloud); view.addSubview(login)
-        folders.frame = NSRect(x: 102, y: 129, width: 326, height: 28); view.addSubview(folders)
+        folders.frame = NSRect(x: 102, y: 129, width: 326, height: 28); folders.isEnabled = false; view.addSubview(folders)
         mode.frame = NSRect(x: 102, y: 93, width: 326, height: 28); mode.selectedSegment = 0; view.addSubview(mode)
         status.font = .systemFont(ofSize: 11); status.textColor = .secondaryLabelColor
         status.frame = NSRect(x: 24, y: 43, width: 412, height: 40); view.addSubview(status)
@@ -123,6 +124,8 @@ final class ShareViewController: NSViewController {
     }
 
     func configureShare(input: ClipInput, account: CloudClipAccount?) {
+        folderRequestID = UUID()
+        folders.removeAllItems(); folders.isEnabled = false; save.isEnabled = false
         self.input = input; cloudAccount = account
         titleField.stringValue = input.title; titleField.isEnabled = true
         mode.setEnabled(!input.pageHTML.isEmpty, forSegment: 0)
@@ -166,16 +169,20 @@ final class ShareViewController: NSViewController {
 
     private func refreshCloudFolders() {
         guard let account = cloudAccount else { return }
+        let requestID = UUID(); folderRequestID = requestID
+        folders.removeAllItems(); folders.isEnabled = false
         login.title = "切换账号"; login.isEnabled = false; save.isEnabled = false; activity.startAnimation(nil)
         session.folders(account: account) { [weak self] result in
-            guard let self, !self.completed else { return }
+            guard let self, !self.completed, self.folderRequestID == requestID else { return }
             self.login.isEnabled = true; self.activity.stopAnimation(nil)
             switch result {
             case .success(let (renewed, items)):
                 self.cloudAccount = renewed
                 self.folders.removeAllItems(); self.folders.addItems(withTitles: items)
-                self.folders.selectItem(withTitle: "/网页剪藏/"); self.save.isEnabled = self.input != nil
-                self.status.stringValue = self.persistenceWarning ?? ""
+                // NSPopUpButton selects the first returned account folder; never invent one.
+                self.folders.isEnabled = self.folders.selectedItem != nil
+                self.save.isEnabled = self.input != nil && self.folders.selectedItem != nil
+                self.status.stringValue = items.isEmpty ? "账号中没有可用文件夹，请在为知笔记中创建后重试。" : self.persistenceWarning ?? ""
             case .failure(let error): self.save.isEnabled = false; self.status.stringValue = error.localizedDescription
             }
         }
@@ -184,12 +191,12 @@ final class ShareViewController: NSViewController {
     @objc func openWebVersion(_ sender: Any?) { NSWorkspace.shared.open(ClipperLinks.webVersionURL) }
 
     private func setEditing(_ enabled: Bool) {
-        titleField.isEnabled = enabled; folders.isEnabled = enabled; mode.isEnabled = enabled; login.isEnabled = enabled
+        titleField.isEnabled = enabled; folders.isEnabled = enabled && folders.selectedItem != nil; mode.isEnabled = enabled; login.isEnabled = enabled
         save.isEnabled = enabled && input != nil && cloudAccount != nil && folders.selectedItem != nil
     }
 
     @objc private func saveNote() {
-        guard !completed, let input, let account = cloudAccount, let folder = folders.selectedItem?.title,
+        guard !completed, folders.isEnabled, let input, let account = cloudAccount, let folder = folders.selectedItem?.title,
               submission.phase == .ready else { return }
         // NSTextField can still be using the shared field editor when a button
         // is clicked. Commit that edit before snapshotting metadata for async work.

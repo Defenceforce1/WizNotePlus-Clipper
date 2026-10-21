@@ -50,7 +50,13 @@ func cloudClipperSelfTest() -> Int32 {
         && !requests[0].url!.absoluteString.contains("password"), "fixed official HTTPS; no secrets in URL")
     var folders: [String] = []
     client.folders(account: account) { folders = (try? $0.get()) ?? [] }
-    check(folders == ["/有效/", "/网页剪藏/"], "destination folder validation and deduplication")
+    check(folders == ["/有效/"], "destination folders contain only validated deduplicated server entries")
+    for items in [[], ["/../"], ["/网页剪藏/", "/网页剪藏/"]] as [[String]] {
+        let folderClient = CloudClipClient(transport: { _, callback in callback(.success(["code": 200, "result": items])) })
+        var received: [String]?
+        folderClient.folders(account: account) { received = try? $0.get() }
+        check(received == Array(Set(items.filter(CloudClipClient.folderIsValid))).sorted(), "empty or existing clip folder is not supplemented with an invented destination")
+    }
     var task: String?
     client.upload(body: body, account: account) { task = (try? $0.get())?.taskID }
     check(task == "synthetic-task" && requests.filter({ $0.httpMethod == "POST" && $0.url!.path == "/ks/gather" }).count == 1, "submit once, no automatic POST retry")
@@ -474,6 +480,41 @@ func shareUIClipperSelfTest() -> Int32 {
     window.close()
     var added = 0, failures = checks.filter { !$0.1 }.count
     func check(_ ok: Bool, _ name: String) { added += 1; if !ok { failures += 1 }; print("\(ok ? "PASS" : "FAIL") \(name)") }
+    var folderReplies: [(Result<[String: Any], Error>) -> Void] = [], pendingUploads = 0
+    let delayedClient = CloudClipClient(transport: { request, callback in
+        if request.url!.path == "/ks/gather" { pendingUploads += 1; callback(.success(["code": 200])) }
+        else { folderReplies.append(callback) }
+    })
+    let pending = ShareViewController(cloud: delayedClient, credentials: memoryOnly, onAcceptedShare: {})
+    let pendingViews = descendants(pending.view)
+    let folderMenu = pendingViews.compactMap { $0 as? NSPopUpButton }.first!
+    let pendingSave = pendingViews.compactMap { $0 as? NSButton }.first(where: { $0.title == "上传" })!
+    check(folderMenu.selectedItem == nil && !folderMenu.isEnabled && !pendingSave.isEnabled, "initial folder selection is empty and disabled")
+    pending.configureShare(input: screenshotInput, account: screenshotAccount)
+    check(folderReplies.count == 1 && folderMenu.numberOfItems == 0 && folderMenu.selectedItem == nil
+        && !folderMenu.isEnabled && !pendingSave.isEnabled, "pending account folder GET has no destination or upload")
+    pendingSave.performClick(nil)
+    check(pendingUploads == 0, "clicking upload before folders arrive cannot submit")
+    folderReplies[0](.success(["code": 200, "result": ["/研究/", "/研究/"]]))
+    check(folderMenu.itemTitles == ["/研究/"] && folderMenu.selectedItem?.title == "/研究/"
+        && folderMenu.isEnabled && pendingSave.isEnabled, "successful GET selects only a real account folder, never a synthetic clip folder")
+    pending.configureShare(input: screenshotInput, account: screenshotAccount)
+    check(folderMenu.numberOfItems == 0 && !folderMenu.isEnabled && !pendingSave.isEnabled, "refresh clears the previous destination before fetching")
+    folderReplies[1](.failure(ClipperError.message("synthetic offline")))
+    check(folderMenu.selectedItem == nil && !folderMenu.isEnabled && !pendingSave.isEnabled, "failed GET leaves no stale folder or upload")
+    pending.configureShare(input: screenshotInput, account: screenshotAccount)
+    folderReplies[2](.success(["code": 200, "result": []]))
+    check(folderMenu.numberOfItems == 0 && folderMenu.selectedItem == nil && !folderMenu.isEnabled
+        && !pendingSave.isEnabled, "empty account folders never invent a destination or enable upload")
+    pending.configureShare(input: screenshotInput, account: screenshotAccount)
+    pending.configureShare(input: screenshotInput, account: screenshotAccount)
+    folderReplies[3](.success(["code": 200, "result": ["/旧目录/"]]))
+    check(folderMenu.selectedItem == nil && !pendingSave.isEnabled, "superseded GET cannot restore stale folders")
+    folderReplies[4](.success(["code": 200, "result": ["/当前目录/"]]))
+    check(folderMenu.itemTitles == ["/当前目录/"] && pendingSave.isEnabled, "current GET still enables an existing destination")
+    pending.configureShare(input: screenshotInput, account: nil)
+    check(folderMenu.numberOfItems == 0 && folderMenu.selectedItem == nil && !folderMenu.isEnabled
+        && !pendingSave.isEnabled && pendingUploads == 0, "no account clears existing destinations without an upload")
     let synthetic = try! CloudClipAccount(["token": "synthetic-only-token", "kbGuid": "00000000-0000-0000-0000-000000000001", "userGuid": "00000000-0000-0000-0000-000000000002", "userID": "synthetic@example.invalid"])
     var uploads: [[String: Any]] = [], finished = 0
     let transport = CloudClipClient(transport: { request, callback in

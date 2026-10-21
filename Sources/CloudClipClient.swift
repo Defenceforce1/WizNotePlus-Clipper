@@ -120,7 +120,7 @@ final class CloudClipClient {
         send("/ks/category/all/" + account.kbGuid, account: account) { result in
             completion(result.flatMap { value in
                 guard let folders = value["result"] as? [String] else { return .failure(ClipperError.message("无法读取服务器文件夹")) }
-                return .success(Array(Set(folders.filter(Self.folderIsValid) + ["/网页剪藏/"])).sorted())
+                return .success(Array(Set(folders.filter(Self.folderIsValid))).sorted())
             })
         }
     }
